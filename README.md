@@ -1,96 +1,125 @@
 # EmbossForge
 
-Open-source parametric embosser tooling and an automatic matched-die generator for 3D printing.
+EmbossForge is an open-source parametric paper embosser and automatic matched-die generator for 3D printing.
 
-EmbossForge's goal is simple: give it artwork and physical specifications, and get a printable male/female embossing die pair without remodeling the artwork by hand.
+The goal is simple: provide artwork and a few physical specifications, and generate a reusable embossing system with interchangeable male/female die cartridges.
 
-## Current V0.1 scope
+## Current status
 
-- SVG input directly.
-- PNG/JPG/BMP/TIFF/WEBP input via automatic vector contour tracing.
-- Parametric round die diameter, base thickness, artwork margin, relief height, paper thickness, female XY clearance, and female extra depth.
-- Automatic male relief generation.
-- Automatic female recessed cavity generation with clearance.
-- OpenSCAD source + STL export.
-- Windows/macOS/Linux OpenSCAD discovery.
-- Local toolchain doctor command.
-- FlashForge Adventurer 5M prototype profile.
+V0.1 already supports:
 
-The reusable press, keyed interchangeable cartridge standard, calibration coupons, STEP/3MF export, and visual Blender inspection workflow come next.
+- SVG artwork input
+- normalized artwork generation
+- automatic matched male/female OpenSCAD dies
+- STL export through OpenSCAD
+- printer-aware defaults for the FlashForge Adventurer 5M
+- manifest generation for reproducibility
+- a CLI and test suite
 
-## Why both CadQuery and OpenSCAD?
+The current development target is V0.2: a standard interchangeable cartridge interface, calibration artifacts, and a parametric CadQuery press mechanism.
 
-CadQuery is the source of truth for precise mechanical parts such as the press, lever, cartridge interfaces, pins, stops, and holders. OpenSCAD is currently used as the artwork boolean backend because its 2D `import()` + `offset()` + `linear_extrude()` pipeline makes arbitrary SVG relief generation compact and reproducible.
+## Tool philosophy
 
-Blender is intentionally not the dimensional source of truth. It is reserved for visual inspection, assembly/ergonomic iteration, renders, and desktop-interactive work where GPT-6 Astra/Codex provides the most value.
+EmbossForge deliberately uses more than one 3D tool:
 
-## Install
+- **CadQuery**: source of truth for precision mechanical geometry, dimensions, fits, cartridges, press parts, and STEP/STL export.
+- **OpenSCAD**: simple reproducible backend for artwork relief dies and calibration pieces.
+- **Blender**: visual QA, ergonomics, presentation renders, moving-assembly inspection, and artistic geometry when useful.
+- **Python**: CLI, artwork preprocessing, validation, printer/paper profiles, orchestration, and automation.
 
-Requires Python 3.11+ and OpenSCAD. CadQuery is recommended for upcoming mechanical CAD work.
+This keeps the project reproducible and parameter-driven while still taking advantage of modern agent-assisted 3D workflows.
 
-```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
+## Development setup
 
-pip install -e .[cad,dev]
-embossforge doctor
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e ".[cad,dev]"
 ```
 
-If OpenSCAD is installed in the normal Windows location (`C:\\Program Files\\OpenSCAD\\openscad.exe`) it does not have to be added to PATH.
+Check the environment:
+
+```powershell
+embossforge doctor
+pytest -q
+```
 
 ## Generate a die pair
 
-```bash
-embossforge die my_logo.svg
+```powershell
+embossforge die examples\embossforge_mark.svg
 ```
 
-This creates a build folder containing normalized artwork, male/female OpenSCAD source, male/female STL files, and a JSON manifest.
+Typical output:
 
-Example with specifications:
-
-```bash
-embossforge die my_logo.png \
-  --diameter 42 \
-  --relief 0.65 \
-  --paper-thickness 0.10 \
-  --clearance 0.20 \
-  --margin 3
+```text
+build/
+└── embossforge_mark/
+    ├── embossforge_mark_normalized.svg
+    ├── embossforge_mark_male.scad
+    ├── embossforge_mark_female.scad
+    ├── embossforge_mark_male.stl
+    ├── embossforge_mark_female.stl
+    └── embossforge_mark_manifest.json
 ```
 
-For light artwork on a dark image:
+The female die is generated with configurable lateral clearance and extra cavity depth so it is not simply a mathematically exact negative of the male relief.
 
-```bash
-embossforge die logo.png --invert
-```
+## Default die geometry
 
-Generate source without calling OpenSCAD:
+The current example uses a 42 mm round die with:
 
-```bash
-embossforge die logo.svg --scad-only
-```
+- 3.0 mm base thickness
+- 0.65 mm male relief
+- 0.20 mm female XY clearance
+- 0.20 mm additional female cavity depth
+- 0.10 mm nominal paper thickness
+- 3.0 mm artwork margin
 
-## Important V0.1 assumptions
+These are development defaults, not final manufacturing constants. EmbossForge will include calibration artifacts so values can be tuned to the actual printer, material, nozzle, and paper stock.
 
-The default arrangement is a lower male die and an upper female die. The female artwork is mirrored in Y before its cavity is generated so that flipping the upper die to face the lower die restores alignment. This will be replaced by a mechanically keyed cartridge orientation standard in the next hardware milestone.
+## Target printer
 
-Raster tracing is designed for logos, line art, monograms, seals, and high-contrast artwork. Photographs need a separate height-map relief mode and are not treated as ordinary embossing artwork.
+Primary development printer:
 
-## FlashForge Adventurer 5M
-
-The initial profile is `profiles/flashforge_adventurer_5m.toml` and targets the user's 0.4 mm nozzle for prototypes. Final minimum feature sizes and die clearance will be calibrated from physical test coupons rather than assumed from nominal printer precision.
+- FlashForge Adventurer 5M
+- 220 x 220 x 220 mm build volume
+- 0.4 mm nozzle for first prototypes
+- 0.25 mm nozzle as a later precision profile
 
 ## Roadmap
 
-1. Calibration coupon generator for relief height, XY clearance, line width, and gap.
-2. Keyed interchangeable die-insert standard.
-3. Parametric CadQuery press and lever mechanism.
-4. STEP and 3MF generation.
-5. Artwork printability analysis + automatic repair suggestions.
-6. 0.25 mm precision profile.
-7. Blender assembly/import/render tooling for Astra visual inspection.
-8. Optional local GUI/web UI.
+### V0.2 — mechanical platform
 
-## License
+- standardized interchangeable cartridge pair
+- keyed orientation and anti-misassembly geometry
+- calibration generator for XY clearance, relief depth, paper gap, and fine-feature limits
+- parametric CadQuery press/lever mechanism
+- STEP and STL exports for mechanical parts
+- assembly coordinates and diagnostic renders
 
-MIT. Contributions and derivative designs are welcome.
+### V0.3 — artwork intelligence
+
+- raster-to-vector cleanup
+- minimum printable feature checks
+- automatic line/gap repair
+- text and circular-seal layout generator
+- paper presets
+- printer/nozzle profiles
+
+### V0.4 — polished user workflow
+
+- one-command project builds
+- generated assembly instructions
+- optional local GUI
+- print/slicer guidance
+- release-ready model packs
+
+## Agent policy
+
+See [`AGENTS.md`](AGENTS.md). The short version: Astra/Codex is intentionally reserved for tasks that truly need the user's local GUI/3D environment. Ordinary Python, tests, documentation, and most parametric geometry should be implemented directly in source code first.
+
+## Licensing
+
+Software is currently released under the MIT License. A dedicated open-hardware license for final mechanical designs can be added when the hardware interface stabilizes.
