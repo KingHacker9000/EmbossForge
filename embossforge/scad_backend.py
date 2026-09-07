@@ -124,8 +124,11 @@ def _art_module(art: Path, spec: DieSpec, *, delta: float = 0.0, mirror_x: bool 
 
 def _carrier_base_scad(spec: DieSpec) -> str:
     """2D keyed carrier base: round die plus one hidden +Y orientation tab."""
-    tab_y = spec.diameter_mm / 2 - 0.25
-    tab_depth = spec.key_depth_mm + 0.25
+    # Tab overlaps the round base by 0.5 mm for a robust union and extends
+    # exactly key_depth_mm beyond the nominal circular edge.
+    overlap = 0.5
+    tab_depth = spec.key_depth_mm + overlap
+    tab_y = spec.diameter_mm / 2 + (spec.key_depth_mm - overlap) / 2
     return (
         "union() { "
         "circle(d=die_d, $fn=$fn); "
