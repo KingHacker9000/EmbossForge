@@ -10,7 +10,7 @@ from .cad import export_press_pack, mechanical_layout
 from .spec import CartridgeSpec, PressSpec
 
 
-MINI_TEST_ARTWORK = """<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-10 -10 20 20\">\n  <circle cx=\"0\" cy=\"0\" r=\"7\" fill=\"none\" stroke=\"black\" stroke-width=\"1.6\"/>\n  <rect x=\"-1.15\" y=\"-5.5\" width=\"2.3\" height=\"11\" fill=\"black\"/>\n  <rect x=\"-5.5\" y=\"-1.15\" width=\"11\" height=\"2.3\" fill=\"black\"/>\n</svg>\n"""
+MINI_TEST_ARTWORK = """<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-10 -10 20 20\">\n  <circle cx=\"0\" cy=\"0\" r=\"7\" fill=\"none\" stroke=\"black\" stroke-width=\"1.8\"/>\n  <rect x=\"-1.25\" y=\"-5.5\" width=\"2.5\" height=\"11\" fill=\"black\"/>\n  <rect x=\"-5.5\" y=\"-1.25\" width=\"11\" height=\"2.5\" fill=\"black\"/>\n</svg>\n"""
 
 
 def mini_cartridge_spec(*, slide_clearance_mm: float = 0.25) -> CartridgeSpec:
@@ -22,27 +22,27 @@ def mini_cartridge_spec(*, slide_clearance_mm: float = 0.25) -> CartridgeSpec:
     printer/nozzle.
     """
     spec = CartridgeSpec(
-        die_diameter_mm=24.0,
-        die_base_thickness_mm=2.4,
-        die_key_width_mm=4.0,
-        die_key_depth_mm=2.0,
+        die_diameter_mm=18.0,
+        die_base_thickness_mm=2.2,
+        die_key_width_mm=3.5,
+        die_key_depth_mm=1.8,
         die_pocket_clearance_mm=0.15,
         die_seat_recess_mm=0.05,
-        body_width_mm=32.0,
-        body_depth_mm=36.0,
-        body_thickness_mm=4.2,
-        side_rail_extension_mm=2.0,
-        side_rail_height_mm=1.8,
-        side_rail_center_z_mm=2.2,
-        side_rail_front_setback_mm=2.0,
-        side_rail_rear_setback_mm=2.0,
+        body_width_mm=26.0,
+        body_depth_mm=30.0,
+        body_thickness_mm=3.8,
+        side_rail_extension_mm=1.8,
+        side_rail_height_mm=1.6,
+        side_rail_center_z_mm=2.0,
+        side_rail_front_setback_mm=1.8,
+        side_rail_rear_setback_mm=1.8,
         receiver_slide_clearance_mm=slide_clearance_mm,
-        receiver_wall_mm=2.2,
-        receiver_floor_mm=1.2,
-        receiver_rear_wall_mm=2.5,
-        receiver_height_mm=4.8,
-        front_finger_notch_radius_mm=4.5,
-        front_finger_notch_depth_mm=2.0,
+        receiver_wall_mm=2.0,
+        receiver_floor_mm=1.1,
+        receiver_rear_wall_mm=2.2,
+        receiver_height_mm=4.4,
+        front_finger_notch_radius_mm=4.0,
+        front_finger_notch_depth_mm=1.8,
     )
     spec.validate()
     return spec
@@ -57,48 +57,48 @@ def mini_press_spec() -> PressSpec:
     not a strength qualification article for the full-size press.
     """
     spec = PressSpec(
-        base_width_mm=84.0,
-        base_depth_mm=92.0,
-        base_thickness_mm=7.0,
-        side_cheek_thickness_mm=6.0,
-        side_cheek_height_mm=48.0,
-        side_cheek_depth_mm=44.0,
-        cheek_spacing_mm=70.0,
+        base_width_mm=72.0,
+        base_depth_mm=80.0,
+        base_thickness_mm=6.0,
+        side_cheek_thickness_mm=5.0,
+        side_cheek_height_mm=42.0,
+        side_cheek_depth_mm=38.0,
+        cheek_spacing_mm=60.0,
         pivot_diameter_mm=4.2,
-        throat_depth_mm=42.0,
-        lever_width_mm=16.0,
-        lever_thickness_mm=7.0,
-        lever_length_mm=115.0,
-        lever_rear_overhang_mm=14.0,
-        lever_pivot_to_platen_mm=22.0,
-        contact_roller_diameter_mm=8.0,
-        contact_roller_width_mm=9.0,
+        throat_depth_mm=37.0,
+        lever_width_mm=14.0,
+        lever_thickness_mm=6.0,
+        lever_length_mm=95.0,
+        lever_rear_overhang_mm=12.0,
+        lever_pivot_to_platen_mm=18.0,
+        contact_roller_diameter_mm=7.0,
+        contact_roller_width_mm=7.5,
         contact_roller_pin_diameter_mm=3.2,
-        contact_roller_drop_mm=8.0,
+        contact_roller_drop_mm=7.0,
         contact_clearance_mm=0.20,
         lever_ear_thickness_mm=3.0,
-        lever_ear_depth_mm=10.0,
-        lever_ear_pin_margin_mm=0.8,
-        lever_ear_overlap_mm=0.8,
-        platen_ear_relief_depth_mm=1.2,
-        platen_width_mm=66.0,
-        platen_depth_mm=30.0,
-        platen_thickness_mm=7.0,
-        guide_rod_diameter_mm=5.0,
-        guide_rod_spacing_mm=50.0,
+        lever_ear_depth_mm=9.0,
+        lever_ear_pin_margin_mm=0.7,
+        lever_ear_overlap_mm=0.7,
+        platen_ear_relief_depth_mm=1.0,
+        platen_width_mm=56.0,
+        platen_depth_mm=26.0,
+        platen_thickness_mm=6.0,
+        guide_rod_diameter_mm=4.0,
+        guide_rod_spacing_mm=44.0,
         guide_rod_platen_clearance_mm=0.50,
         guide_rod_socket_clearance_mm=0.25,
-        guide_rod_socket_depth_mm=5.0,
-        top_bridge_depth_mm=20.0,
-        top_bridge_thickness_mm=7.0,
-        top_bridge_bottom_above_base_mm=48.0,
-        stop_sleeve_outer_diameter_mm=9.0,
+        guide_rod_socket_depth_mm=4.0,
+        top_bridge_depth_mm=18.0,
+        top_bridge_thickness_mm=6.0,
+        top_bridge_bottom_above_base_mm=42.0,
+        stop_sleeve_outer_diameter_mm=7.5,
         stop_sleeve_rod_clearance_mm=0.50,
-        open_face_gap_mm=9.0,
+        open_face_gap_mm=7.0,
         closed_face_gap_mm=0.20,
-        nominal_die_relief_mm=0.50,
+        nominal_die_relief_mm=0.45,
         mounting_hole_diameter_mm=3.2,
-        mounting_hole_edge_offset_mm=8.0,
+        mounting_hole_edge_offset_mm=7.0,
     )
     spec.validate()
     return spec
@@ -106,16 +106,16 @@ def mini_press_spec() -> PressSpec:
 
 def mini_die_spec(*, paper_thickness_mm: float = 0.10) -> DieSpec:
     spec = DieSpec(
-        diameter_mm=24.0,
-        base_thickness_mm=2.4,
-        relief_height_mm=0.50,
+        diameter_mm=18.0,
+        base_thickness_mm=2.2,
+        relief_height_mm=0.45,
         female_xy_clearance_mm=0.20,
         female_extra_depth_mm=0.15,
         paper_thickness_mm=paper_thickness_mm,
-        margin_mm=2.0,
-        facets=96,
-        key_width_mm=4.0,
-        key_depth_mm=2.0,
+        margin_mm=1.5,
+        facets=80,
+        key_width_mm=3.5,
+        key_depth_mm=1.8,
     )
     spec.validate()
     return spec
@@ -191,11 +191,11 @@ def export_mini_test_pack(
             "walls": 2,
             "top_layers": 3,
             "bottom_layers": 3,
-            "infill_percent": 8,
+            "infill_percent": 6,
             "note": "Use the slicer's filament-grams estimate before printing. Increase walls/infill only if the throwaway model is too flexible.",
         },
         "hardware_note": (
-            "For a working low-force test, use two 5 mm smooth guide rods (length in this manifest), "
+            "For a working low-force test, use two 4 mm smooth guide rods (length in this manifest), "
             "an approximately 4 mm main pivot pin/bolt, and an approximately 3 mm roller pin/bolt. "
             "Do not use the miniature for high-force embossing."
         ),
