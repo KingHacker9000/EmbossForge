@@ -1,141 +1,142 @@
 # Agent / automation interface
 
-EmbossForge is intentionally structured so coding agents and external automation do not need to manipulate CAD meshes directly.
+EmbossForge is structured so agents and automation operate on parametric requests rather than editing meshes directly. Read [`AGENTS.md`](../AGENTS.md) first.
 
-Read the repository-level [`AGENTS.md`](../AGENTS.md) first. This document focuses on invoking the die generator as a tool.
-
-## Preferred integration: Python API
+## Python API
 
 Use `embossforge.generator.generate_die()`.
+
+### Binary / flat artwork
 
 ```python
 from pathlib import Path
 from embossforge.config import adventurer_5m_profile
 from embossforge.generator import DieGenerationRequest, generate_die
 
-request = DieGenerationRequest(
-    artwork=Path("input/logo.svg"),
-    output_root=Path("build/agent"),
-    name="library-seal",
-    diameter_mm=42.0,
-    paper_preset="copy",
-    printer_profile=adventurer_5m_profile(),
+result = generate_die(
+    DieGenerationRequest(
+        artwork=Path("input/logo.svg"),
+        output_root=Path("build/agent"),
+        name="library-seal",
+        diameter_mm=42.0,
+        paper_preset="copy",
+        printer_profile=adventurer_5m_profile(),
+    )
 )
-
-result = generate_die(request)
-
-print(result.male_stl)
-print(result.female_stl)
-print(result.manifest)
 ```
+
+Binary behavior remains the backward-compatible default.
+
+### True height-map relief
+
+```python
+from pathlib import Path
+from embossforge.config import adventurer_5m_profile
+from embossforge.generator import DieGenerationRequest, generate_die
+from embossforge.relief import ArtworkMode, ReliefSpec, ReliefStyle, SourceInterpretation
+
+result = generate_die(
+    DieGenerationRequest(
+        artwork=Path("input/grayscale-crest.png"),
+        output_root=Path("build/agent"),
+        name="grayscale-crest",
+        paper_preset="copy",
+        printer_profile=adventurer_5m_profile(),
+        artwork_mode=ArtworkMode.RELIEF,
+        source_interpretation=SourceInterpretation.HEIGHT_MAP,
+        relief=ReliefSpec(
+            max_relief_mm=0.35,
+            style=ReliefStyle.STEPPED,
+            levels=6,
+            gamma=1.0,
+        ),
+        allow_risky=False,
+    )
+)
+```
+
+### Shaded/rendered reference
+
+```python
+result = generate_die(
+    DieGenerationRequest(
+        artwork=Path("input/rendered-medallion.png"),
+        output_root=Path("build/agent"),
+        paper_preset="copy",
+        printer_profile=adventurer_5m_profile(),
+        artwork_mode=ArtworkMode.RELIEF,
+        source_interpretation=SourceInterpretation.SHADED_REFERENCE,
+        relief=ReliefSpec(max_relief_mm=0.35),
+    )
+)
+```
+
+This invokes deterministic shaded-reference interpretation. It is not inverse rendering and does not claim to recover true 3D geometry. Agents should inspect `derived_relief_preview`, `derived_heightmap`, and the manifest's `source_derivation` before treating the result as approved artwork. Interactive desktop users receive an explicit preview/accept step; headless agents must implement their own review policy.
+
+## Result object
 
 `DieGenerationResult` exposes:
 
-- `name`
-- `output_dir`
-- `normalized_artwork`
-- resolved `spec`
-- resolved `printer_profile`
-- `paper_source`
-- `clearance_source`
-- `outputs`
-- convenience properties `male_stl`, `female_stl`, and `manifest`
+- `name`, `output_dir`, and `normalized_artwork`;
+- resolved `spec` and `printer_profile`;
+- `paper_source` and `clearance_source`;
+- `artwork_mode` and `source_interpretation`;
+- structured `validation`;
+- `outputs` plus `male_stl`, `female_stl`, and `manifest` convenience properties.
 
-## Manifest as machine-readable provenance
+Shaded-reference `outputs` additionally include the derived height map, relief preview, and foreground mask.
 
-Every normal generation writes `<name>_manifest.json`. The shared generator adds a `generation_context` block containing the original artwork path, resolved printer profile, where paper/clearance values came from, and raster preprocessing settings.
+## Manifest provenance
 
-An agent should inspect the manifest instead of reverse-engineering settings from STL geometry.
+Generated manifests use schema v2 for the shared generator path. They preserve the original artwork, resolved profile/settings, source semantics, relief parameters, sampling metadata, validation results, and whether a paper-risk override was used. Shaded-reference jobs also record the deterministic derivation method and the explicit statement that the result is interpreted emboss relief rather than reconstructed true depth.
 
-## CLI integration
+Agents should inspect the manifest rather than reverse-engineering STL geometry.
 
-The same backend is available through:
+## CLI
+
+Binary:
 
 ```text
 embossforge die logo.svg --out build/agent --paper copy --profile profiles/flashforge_adventurer_5m.toml
 ```
 
-Use the Python API when you need structured return values. Use the CLI when shell-level orchestration is simpler.
+Height map:
 
----
-
-## Planned variable-depth relief API
-
-Variable-depth grayscale relief is specified but not yet implemented. Agents must read [RELIEF_MODE_SPEC.md](RELIEF_MODE_SPEC.md) before implementing or consuming it.
-
-The compatibility rule is strict: callers that use the current `DieGenerationRequest` without relief options must continue to get binary-mode behavior.
-
-The planned additive API shape is conceptually:
-
-```python
-from pathlib import Path
-from embossforge.generator import DieGenerationRequest, generate_die
-from embossforge.relief import ReliefSpec
-
-request = DieGenerationRequest(
-    artwork=Path("input/grayscale-crest.png"),
-    output_root=Path("build/agent"),
-    name="grayscale-crest",
-    diameter_mm=42.0,
-    paper_preset="copy",
-    printer_profile=profile,
-    artwork_mode="relief",
-    relief=ReliefSpec(
-        max_relief_mm=0.80,
-        style="stepped",
-        levels=6,
-        gamma=1.0,
-        polarity="dark-high",
-    ),
-    allow_risky=False,
-)
-
-result = generate_die(request)
+```text
+embossforge die relief.png --mode relief --source-interpretation height-map --relief-max 0.35 --paper copy --profile profiles/flashforge_adventurer_5m.toml
 ```
 
-Exact class/field names may be refined during implementation, but the contract in `RELIEF_MODE_SPEC.md` takes precedence.
+Shaded reference:
 
-### Planned relief manifest behavior
+```text
+embossforge die render.png --mode relief --source-interpretation shaded-reference --relief-max 0.35 --paper copy --profile profiles/flashforge_adventurer_5m.toml
+```
 
-- manifests gain `schema_version: 2`;
-- manifests with no `schema_version` are interpreted as current v1;
-- current top-level fields remain present;
-- relief processing parameters and sampling metadata are recorded;
-- validation findings are structured rather than only printed to stderr/UI;
-- explicit risk override is recorded as provenance.
+Use Python when structured return values are important and CLI when shell orchestration is simpler.
 
-### Planned validation behavior for agents
+## Validation contract
 
 Agents must distinguish:
 
-- **hard geometry errors** — invalid model, cannot be bypassed;
-- **printability/paper-risk findings** — heuristic advisories that may be overridden intentionally.
+- **hard geometry/mating errors** — invalid dimensions, base breakthrough, build-volume errors, failed solids, or predicted die interference; these cannot be bypassed;
+- **experimental paper-risk findings** — steep slopes, isolated peaks, dense/deep relief, and related heuristics; high findings may be intentionally accepted with `allow_risky=True` / `--allow-risky`.
 
-A future `allow_risky=True`/`--allow-risky` path may bypass only overrideable risk findings. It must never bypass base breakthrough, invalid dimensions, build-volume errors, NaN geometry, or failed solid generation.
+`allow_risky` never bypasses die compatibility. An empty warning list is not proof that paper cannot tear.
 
-An agent must not interpret an empty warning list as proof that a die cannot tear paper.
+When STLs are rendered, EmbossForge performs nominal exported-mesh closure collision validation in addition to source/height-field checks.
 
----
+## Source semantics are explicit
+
+Do not silently choose relief because an image contains grayscale. Use:
+
+- `FLAT_ARTWORK` with `BINARY` for ordinary artwork;
+- `HEIGHT_MAP` with `RELIEF` only when grayscale was authored as Z;
+- `SHADED_REFERENCE` with `RELIEF` for rendered/photographic 3D-looking artwork.
+
+Variable-depth SVG tone/gradient rendering is not a direct machine path; export a raster height map instead.
 
 ## What agents should not do
 
-Do not:
+Do not edit generated STLs to change dimensions, derive the female independently, bypass paper/clearance rules, create GUI-only geometry formulas, hide validation findings, treat Blender as dimensional source of truth, claim press strength from collision-free CAD, or claim variable-depth physical quality from software validation alone.
 
-- edit generated STL files to change dimensions
-- guess the matching female geometry independently
-- bypass paper/clearance settings
-- implement GUI-only relief formulas that differ from CLI/API behavior
-- silently enable grayscale relief because an image contains gray tones
-- discard or hide relief-validation findings
-- treat a Blender scene as the dimensional source of truth
-- claim hardware strength from collision-free CAD
-- claim paper safety or relief quality from software validation alone
-- overwrite physical-validation records with inferred results
-
-## Geometry changes
-
-If an agent is asked to change die behavior, modify source modules and regenerate. If asked to change the press/cartridge mechanism, modify `embossforge/mechanics/` and preserve parametric source + validation.
-
-For relief-mode work, preserve the parallel architecture: current binary processing stays stable while a deterministic height-map path is added behind the same generator service.
-
-Expensive graphical/3D agents are most useful only after generated geometry exists and a visual inspection task remains.
+Geometry changes belong in source modules followed by regeneration and tests. Press/cartridge changes belong in `embossforge/mechanics/`. Expensive graphical/3D agents are best reserved for visual QA after deterministic geometry exists.
