@@ -1,8 +1,8 @@
 # Micro Embosser
 
-The Micro Embosser is the smallest functional EmbossForge press and is designed specifically around the **16 mm `butterfly-test` die pair**.
+The Micro Embosser is now an **ultra-light one-piece PLA flexure tong** made specifically for the existing **16 mm `butterfly-test` die pair**.
 
-It exists for one purpose: reuse the already-printed butterfly male/female dies to validate a real lever press, cartridge alignment, and light embossing before spending material on the larger miniature or full-size press.
+It deliberately does **not** reuse the full rod-guided press architecture. The goal is to spend as little filament as practical while still testing the important thing: can the already-proven butterfly male/female pair be held in alignment and squeezed together by a printed hand tool?
 
 ## Generate it
 
@@ -14,112 +14,105 @@ Default output:
 
 ```text
 build/micro-press/
+  micro_butterfly_tongs.stl
+  micro_butterfly_tongs.step
   micro_press_manifest.json
-  mechanics/
-    base.stl
-    side_cheek.stl
-    top_bridge.stl
-    lever.stl
-    contact_roller.stl
-    platen.stl
-    stop_sleeve.stl
-    receiver.stl
-    cartridge.stl
-    *.step
-    assembly_layout.json
-    mechanics_manifest.json
 ```
 
-The pack does **not** regenerate the butterfly dies. It is meant to accept the pair created by:
+That is the whole mechanism. There are no cartridges, receivers, guide rods, pivots, rollers, screws, or extra printed press parts.
 
-```powershell
-embossforge butterfly-test
+## How it works
+
+The body is shaped like a pair of spring tongs:
+
+```text
+rear flexure                                      jaws
+┌──────────────────────────────────────────────────◉  female
+│
+│       long PLA spring arms
+│
+└──────────────────────────────────────────────────◉  male
 ```
 
-## Exact die compatibility
+The two long arms are joined at the rear. They are intentionally slender enough to flex elastically by a small amount when squeezed by hand. This uses the natural springiness of printed PLA over a long beam rather than relying on a very thin living hinge.
 
-The cartridge contract is tied directly to `micro_butterfly_spec()` rather than duplicating the dimensions:
+The 16 mm dies load **directly** into shallow keyed recesses in the opposing jaws.
+
+## Exact butterfly compatibility
+
+The socket geometry is derived from `micro_butterfly_spec()`:
 
 - die diameter: **16.0 mm**
 - die base thickness: **1.8 mm**
 - orientation key width: **3.5 mm**
 - orientation key depth: **1.5 mm**
-- nominal butterfly relief: **0.45 mm**
+- butterfly relief: **0.45 mm**
 
-Default cartridge pocket clearance is **0.18 mm per side**. If the already-printed die is unusually tight or loose, regenerate with:
+The default die-pocket clearance is **0.15 mm per side**.
+
+If your already-printed pair is unusually tight or loose, regenerate explicitly instead of scaling the STL:
 
 ```powershell
-embossforge micro-press --die-clearance 0.22
+embossforge micro-press --die-clearance 0.18
 ```
 
-Do not scale the STL to fix die fit. Change the explicit clearance parameter instead so the model remains reproducible.
+## Size and material goal
 
-## Size
+The important dimensions are approximately:
 
-Nominal micro-press dimensions are approximately:
+- arm length: **72 mm**
+- arm width: **7 mm**
+- arm thickness: **3 mm**
+- jaw outside diameter: **20.5 mm**
+- unloaded jaw-surface gap: **5.2 mm**
+- required total elastic closure: about **2.9 mm**
+- required flex per arm: about **1.45 mm**
 
-- base: **58 × 65 × 5 mm**
-- lever: **80 mm**
-- cartridge body: **22 × 24 × 3.2 mm**
-- guide rods: **3 mm diameter**
-- nominal lever ratio: about **4.7:1**
+The generated manifest records a conservative **all-solid PLA mass upper bound**. A normal sliced part with sparse infill should be lower. Always trust FlashPrint's actual material estimate before printing.
 
-It is smaller than the existing `mini-test` press and is not a uniform scale of the full mechanism. Printer-sensitive fit clearances remain realistic absolute dimensions.
+## Printing
 
-## Hardware
+The STL is pre-rotated onto its side so both spring arms are supported by the bed. The die sockets are shallow sideways recesses in that print orientation.
 
-Use:
+Starting point for the Adventurer 5M / 0.4 mm nozzle:
 
-- 2 × **3 mm smooth guide rods** (exact generated length is in `micro_press_manifest.json`)
-- 1 × **M3-class bolt or smooth pin** for the main lever pivot
-- 1 × **M2.5-class bolt or smooth pin** for the contact roller
+- 0.20 mm layers
+- 3 walls
+- 10% infill
+- supports off initially
 
-Smooth steel rod is preferred for the guide rods. The micro press is intentionally low-force; do not use thin printed guide rods as evidence that the full mechanism is safe under load.
+Inspect the socket layers in FlashPrint preview. If your slicer creates obviously unsupported material around the shallow recesses, enable only the minimum local support needed.
 
-## Filament-saving print order
+## Loading the dies
 
-Do not print the entire press first.
+After printing and cooling:
 
-1. Print **one `cartridge.stl`**.
-2. Let it cool and try the already-printed 16 mm butterfly die in the keyed pocket.
-3. The die should seat without force and should not rattle excessively.
-4. If fit is good, print the second cartridge and **two `receiver.stl` copies**.
-5. Confirm the cartridges slide into the receivers without binding.
-6. Only then print the remaining press parts.
+1. Put the **male butterfly die** into the lower keyed socket.
+2. Put the **female butterfly die** into the opposing upper keyed socket.
+3. Make sure both rectangular tabs enter their key extensions. Do not rotate either die independently.
+4. The die bases deliberately remain partly exposed so they can be removed again.
+5. Small front scallops provide access for a fingernail or thin plastic pick.
 
-This sequence makes the smallest possible print answer the highest-risk fit question before more material is committed.
-
-## Assembly orientation
-
-- Put the **male butterfly die** in the lower cartridge.
-- Put the **female butterfly die** in the upper cartridge.
-- Seat each rectangular orientation tab in the matching keyed pocket.
-- Do not independently rotate either die.
-- The upper receiver/cartridge is installed flipped using the same 180° transform as the full EmbossForge mechanism.
-
-The generated `assembly_layout.json` contains the exact open/closed transforms used by collision validation and Blender inspection.
+The tool should not require glue for the first fit test. If a die is loose, stop and adjust `--die-clearance` rather than permanently bonding the known-good test pair.
 
 ## First use
 
-Use ordinary printer/notebook paper first.
+1. Insert one sheet of notebook or copy paper between the butterfly faces.
+2. Hold the long arms like tongs.
+3. Squeeze gradually until the male and female begin to engage.
+4. Stop as soon as the emboss is formed.
+5. Release and inspect the paper.
 
-1. Insert both cartridges fully against their receiver stops.
-2. Place one sheet between the dies.
-3. Lower the lever slowly until the dies begin to engage.
-4. Apply only enough force to form the butterfly.
-5. Release and inspect the paper before increasing force.
+Do **not** force the arms completely flat together. PLA can flex over a long beam, but repeated over-bending can cause whitening, cracking, or fatigue.
 
-The butterfly pair itself has already physically embossed notebook paper successfully. The **Micro Embosser mechanism has not yet been physically validated**, so treat its first print as a low-force prototype.
+## What this test proves
 
-## What success proves
+A successful print validates:
 
-A successful Micro Embosser test validates:
+- direct fit of the already-printed 16 mm butterfly pair;
+- key orientation in a real hand tool;
+- whether a very lightweight PLA flexure can provide enough closing force;
+- whether the die faces remain aligned while the arms flex;
+- whether this low-material architecture is worth carrying into future compact embosser designs.
 
-- existing 16 mm die-to-cartridge fit;
-- cartridge-to-receiver fit;
-- male/female orientation;
-- guide/platen alignment;
-- lever and roller motion;
-- the ability of the press architecture to emboss using the known-good butterfly pair.
-
-It does **not** validate the strength of the full-size press.
+It does **not** validate the full-size press strength, and the flexure tongs remain physically unvalidated until actually printed and tested.
