@@ -8,12 +8,14 @@ import sys
 
 from . import __version__
 from .artwork import normalize_artwork
+from .calibration import write_calibration_pack
 from .config import DieSpec
-from .scad_backend import find_openscad, generate_die_pair
+from .mechanics import CartridgeSpec, PressSpec, export_press_pack
+from .scad_backend import find_openscad, generate_die_pair, render_scad
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="embossforge", description="Generate printable embossing dies from artwork")
+    parser = argparse.ArgumentParser(prog="embossforge", description="Generate printable embossing dies and press hardware")
     parser.add_argument("--version", action="version", version=f"EmbossForge {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -33,6 +35,16 @@ def build_parser() -> argparse.ArgumentParser:
     die.add_argument("--threshold", type=int, default=160, help="Raster threshold 0-255")
     die.add_argument("--invert", action="store_true", help="Use for light artwork on a dark background")
     die.add_argument("--scad-only", action="store_true", help="Generate OpenSCAD source but do not render STL")
+
+    calibration = sub.add_parser("calibrate", help="Generate printer/emboss calibration artifacts")
+    calibration.add_argument("--out", type=Path, default=Path("build") / "calibration", help="Output directory")
+    calibration.add_argument("--scad-only", action="store_true", help="Generate OpenSCAD source but do not render STL")
+
+    mechanics = sub.add_parser("mechanics", help="Generate the V0.2 cartridge and lever-press prototype")
+    mechanics.add_argument("--out", type=Path, default=Path("build") / "mechanics", help="Output directory")
+    mechanics.add_argument("--die-diameter", type=float, default=42.0, help="Compatible die diameter in mm")
+    mechanics.add_argument("--slide-clearance", type=float, default=0.25, help="Cartridge/receiver per-side clearance in mm")
+    mechanics.add_argument("--pivot", type=float, default=6.4, help="Pivot bore diameter in mm")
     return parser
 
 
@@ -43,6 +55,10 @@ def main(argv: list[str] | None = None) -> int:
             return _doctor()
         if args.command == "die":
             return _die(args)
+        if args.command == "calibrate":
+            return _calibrate(args)
+        if args.command == "mechanics":
+            return _mechanics(args)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -60,13 +76,18 @@ def _doctor() -> int:
         import cadquery as cq  # noqa: F401
     except Exception as exc:
         print(f"CadQuery:   NOT AVAILABLE ({exc})")
+        cadquery_ok = False
     else:
         version = getattr(cq, "__version__", "installed")
         print(f"CadQuery:   OK  {version}")
+        cadquery_ok = True
+
+    blender = shutil.which("blender") or shutil.which("blender.exe")
+    print(f"Blender:    {'OK  ' + blender if blender else 'optional / not on PATH'}")
 
     ff = shutil.which("ffmpeg")
     print(f"FFmpeg:     {'OK  ' + ff if ff else 'optional / not found'}")
-    return 0 if openscad else 1
+    return 0 if openscad and cadquery_ok else 1
 
 
 def _die(args: argparse.Namespace) -> int:
@@ -95,6 +116,38 @@ def _die(args: argparse.Namespace) -> int:
 
     print(f"Generated die pair: {name}")
     print(f"  normalized artwork: {normalized}")
+    for key, path in outputs.items():
+        print(f"  {key}: {path}")
+    return 0
+
+
+def _calibrate(args: argparse.Namespace) -> int:
+    outputs = write_calibration_pack(args.out)
+    if not args.scad_only:
+        rendered: dict[str, str] = {}
+        for name, source in outputs.items():
+            target = Path(source).with_suffix(".stl")
+            render_scad(source, target)
+            rendered[f"{name}_stl"] = str(target)
+        outputs.update(rendered)
+
+    print("Generated calibration pack")
+    for key, path in outputs.items():
+        print(f"  {key}: {path}")
+    return 0
+
+
+def _mechanics(args: argparse.Namespace) -> int:
+    cartridge = replace(
+        CartridgeSpec(),
+        die_diameter_mm=args.die_diameter,
+        receiver_slide_clearance_mm=args.slide_clearance,
+    )
+    press = replace(PressSpec(), pivot_diameter_mm=args.pivot)
+    outputs = export_press_pack(args.out, cartridge=cartridge, press=press)
+
+    print("Generated V0.2 mechanical prototype")
+    print(f"  nominal lever ratio: {press.nominal_lever_ratio:.2f}:1")
     for key, path in outputs.items():
         print(f"  {key}: {path}")
     return 0
