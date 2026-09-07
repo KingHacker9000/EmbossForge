@@ -1,0 +1,113 @@
+name: Windows Desktop Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[cad,gui,dev]"
+          pip install pyinstaller>=6.12
+
+      - name: Install OpenSCAD and Inno Setup
+        shell: pwsh
+        run: |
+          choco install openscad -y --no-progress
+          choco install innosetup -y --no-progress
+
+      - name: Run tests
+        shell: pwsh
+        run: pytest -q
+
+      - name: Smoke-import desktop app
+        shell: pwsh
+        run: python -c "import embossforge.gui; print('desktop import OK')"
+
+      - name: Build portable desktop app
+        shell: pwsh
+        run: |
+          python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --windowed `
+            --onedir `
+            --name EmbossForge `
+            --hidden-import cv2 `
+            packaging/desktop_entry.py
+
+      - name: Bundle OpenSCAD and notices
+        shell: pwsh
+        run: |
+          $openScadExe = Get-ChildItem "C:\Program Files" -Filter openscad.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $openScadExe) {
+            $openScadExe = Get-ChildItem "C:\Program Files (x86)" -Filter openscad.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $openScadExe) { throw "Could not locate OpenSCAD after installation" }
+
+          $toolDir = "dist\EmbossForge\tools\openscad"
+          New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
+          Copy-Item (Join-Path $openScadExe.Directory.FullName "*") $toolDir -Recurse -Force
+          Copy-Item LICENSE "dist\EmbossForge\LICENSE.txt"
+          Copy-Item THIRD_PARTY_NOTICES.md "dist\EmbossForge\THIRD_PARTY_NOTICES.md"
+          Copy-Item README.md "dist\EmbossForge\README.md"
+
+      - name: Verify bundled OpenSCAD path
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist\EmbossForge\tools\openscad\openscad.exe")) {
+            throw "Portable bundle is missing OpenSCAD"
+          }
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          $zip = "dist\EmbossForge-Windows-x64-portable.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "dist\EmbossForge\*" -DestinationPath $zip -CompressionLevel Optimal
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "Inno Setup compiler not found" }
+          & $iscc "packaging\windows\EmbossForge.iss"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmbossForge-Windows-x64
+          path: |
+            dist/EmbossForge-Windows-x64-portable.zip
+            dist/installer/EmbossForge-Setup-Windows-x64.exe
+          if-no-files-found: error
+
+      - name: Attach assets to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/EmbossForge-Windows-x64-portable.zip
+            dist/installer/EmbossForge-Setup-Windows-x64.exe
