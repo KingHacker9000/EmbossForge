@@ -41,8 +41,23 @@ The male and female pieces printed successfully and the butterfly geometry was v
 - arbitrary intricate artwork quality
 - fine text or thin-line limits
 - cartridge/receiver fit
-- the miniature or full press mechanism
+- the Micro Embosser, miniature, or full press mechanism
 - full-size press strength or durability
 - optimal clearances for different paper stocks
 
-Future physical tests should append dated entries here rather than overwriting this result.
+## Next queued physical article — 16 mm Micro Embosser
+
+The repository now includes `embossforge micro-press`, a dedicated low-force press whose cartridge dimensions are tied directly to the already-proven 16 mm `butterfly-test` die contract.
+
+This article is **software/CAD validated only until printed**. Its first physical test should record, in order:
+
+1. actual butterfly-die fit in one keyed cartridge;
+2. cartridge sliding fit in the receiver;
+3. open/closed platen and lever motion;
+4. male/female alignment under paper;
+5. whether the known-good butterfly pair embosses cleanly using lever force;
+6. any observed flex, binding, cracking, or stop/alignment error.
+
+See `docs/MICRO_PRESS.md` for the exact print/assembly sequence.
+
+Future physical tests should append dated entries here rather than overwriting earlier results.
