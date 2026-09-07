@@ -92,11 +92,7 @@ class CartridgeSpec:
 
     @property
     def receiver_outer_width_mm(self) -> float:
-        return (
-            self.body_width_mm
-            + 2 * self.side_rail_extension_mm
-            + 2 * self.receiver_wall_mm
-        )
+        return self.body_width_mm + 2 * self.side_rail_extension_mm + 2 * self.receiver_wall_mm
 
     @property
     def receiver_outer_depth_mm(self) -> float:
@@ -113,34 +109,48 @@ class CartridgeSpec:
 
 @dataclass(frozen=True)
 class PressSpec:
-    """Prototype dimensions for the V0.2 lever press."""
+    """Dimensions for the V0.2 rod-guided lever press prototype.
 
-    base_width_mm: float = 100.0
+    The upper platen slides on two 8 mm guide rods outside the cartridge. This
+    avoids relying on printed sliding towers in the high-load area and makes the
+    upper receiver easy to remove/inspect.
+    """
+
+    base_width_mm: float = 130.0
     base_depth_mm: float = 155.0
     base_thickness_mm: float = 12.0
 
     side_cheek_thickness_mm: float = 10.0
-    side_cheek_height_mm: float = 128.0
-    side_cheek_depth_mm: float = 34.0
-    cheek_spacing_mm: float = 58.0
+    side_cheek_height_mm: float = 82.0
+    side_cheek_depth_mm: float = 70.0
+    cheek_spacing_mm: float = 104.0
 
     pivot_diameter_mm: float = 6.4
-    pivot_axis_height_above_base_mm: float = 106.0
+    pivot_axis_height_above_base_mm: float = 52.0
     throat_depth_mm: float = 67.0
 
     lever_width_mm: float = 28.0
     lever_thickness_mm: float = 12.0
-    lever_length_mm: float = 250.0
+    lever_length_mm: float = 205.0
     lever_rear_overhang_mm: float = 24.0
-    lever_pivot_to_ram_mm: float = 36.0
+    lever_pivot_to_platen_mm: float = 36.0
 
-    ram_width_mm: float = 34.0
-    ram_depth_mm: float = 36.0
-    ram_height_mm: float = 66.0
-    ram_slide_clearance_mm: float = 0.30
-    guide_wall_mm: float = 7.0
-    guide_height_mm: float = 76.0
-    guide_rear_wall_mm: float = 7.0
+    platen_width_mm: float = 100.0
+    platen_depth_mm: float = 46.0
+    platen_thickness_mm: float = 12.0
+
+    guide_rod_diameter_mm: float = 8.0
+    guide_rod_spacing_mm: float = 78.0
+    guide_rod_platen_clearance_mm: float = 0.50
+    guide_rod_socket_clearance_mm: float = 0.20
+    guide_rod_socket_depth_mm: float = 8.0
+
+    top_bridge_depth_mm: float = 30.0
+    top_bridge_thickness_mm: float = 12.0
+    top_bridge_bottom_above_base_mm: float = 70.0
+
+    stop_sleeve_outer_diameter_mm: float = 12.0
+    stop_sleeve_rod_clearance_mm: float = 0.50
 
     open_face_gap_mm: float = 18.0
     closed_face_gap_mm: float = 0.20
@@ -153,23 +163,41 @@ class PressSpec:
         for name, value in self.__dict__.items():
             if name.endswith("_mm") and value <= 0:
                 raise ValueError(f"{name} must be positive")
+        if self.cheek_spacing_mm <= self.platen_width_mm:
+            raise ValueError("Cheek spacing must exceed platen width")
         if self.cheek_spacing_mm <= self.lever_width_mm:
             raise ValueError("Cheek spacing must exceed lever width")
         if self.lever_rear_overhang_mm >= self.lever_length_mm:
             raise ValueError("Lever rear overhang must be shorter than the lever")
-        if self.lever_pivot_to_ram_mm >= self.lever_length_mm - self.lever_rear_overhang_mm:
-            raise ValueError("Ram contact must lie on the forward lever arm")
+        if self.lever_pivot_to_platen_mm >= self.lever_length_mm - self.lever_rear_overhang_mm:
+            raise ValueError("Platen contact must lie on the forward lever arm")
         if self.closed_face_gap_mm >= self.open_face_gap_mm:
             raise ValueError("Closed face gap must be smaller than open face gap")
         if self.pivot_axis_height_above_base_mm >= self.side_cheek_height_mm:
             raise ValueError("Pivot must lie inside the side cheek")
-        if self.guide_height_mm <= self.ram_height_mm / 2:
-            raise ValueError("Ram guide is too short for useful guidance")
+        if self.top_bridge_bottom_above_base_mm + self.top_bridge_thickness_mm > self.side_cheek_height_mm:
+            raise ValueError("Top bridge must fit within the side-cheek height")
+        if self.guide_rod_spacing_mm >= self.platen_width_mm - self.guide_rod_diameter_mm:
+            raise ValueError("Guide rods are too close to the platen edges")
+        if self.stop_sleeve_outer_diameter_mm <= self.guide_rod_diameter_mm + self.stop_sleeve_rod_clearance_mm:
+            raise ValueError("Stop sleeve needs positive wall thickness")
 
     @property
     def nominal_lever_ratio(self) -> float:
-        return (self.lever_length_mm - self.lever_rear_overhang_mm) / self.lever_pivot_to_ram_mm
+        return (self.lever_length_mm - self.lever_rear_overhang_mm) / self.lever_pivot_to_platen_mm
 
     @property
-    def required_ram_travel_mm(self) -> float:
+    def required_platen_travel_mm(self) -> float:
         return self.open_face_gap_mm - self.closed_face_gap_mm
+
+    @property
+    def guide_rod_platen_hole_diameter_mm(self) -> float:
+        return self.guide_rod_diameter_mm + self.guide_rod_platen_clearance_mm
+
+    @property
+    def guide_rod_socket_diameter_mm(self) -> float:
+        return self.guide_rod_diameter_mm + self.guide_rod_socket_clearance_mm
+
+    @property
+    def top_bridge_width_mm(self) -> float:
+        return self.cheek_spacing_mm + 2 * self.side_cheek_thickness_mm
