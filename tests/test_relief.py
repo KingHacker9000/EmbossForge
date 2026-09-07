@@ -73,4 +73,7 @@ def test_light_high_polarity_reverses_mapping(tmp_path: Path):
         auto_filter_subresolution=False,
     )
     result = build_height_map(source, tmp_path, "polarity", die, relief, None)
-    assert result.relief[32, 48] > result.relief[32, 16]
+    cy = result.height_px // 2
+    left = result.width_px // 4
+    right = 3 * result.width_px // 4
+    assert result.relief[cy, right] > result.relief[cy, left]
