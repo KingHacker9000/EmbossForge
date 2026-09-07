@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "embossforge"
+version = "0.1.0"
+description = "Open-source parametric embosser and automatic interchangeable die generator for 3D printing."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "EmbossForge contributors"}]
+dependencies = [
+  "numpy>=1.26",
+  "opencv-python-headless>=4.9",
+]
+
+[project.optional-dependencies]
+cad = ["cadquery>=2.4"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+embossforge = "embossforge.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["embossforge*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
