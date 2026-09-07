@@ -137,7 +137,7 @@ If filament is scarce, do **not** print the full V0.2 press first. Generate the 
 embossforge mini-test
 ```
 
-This writes `build/mini-test/` containing a much smaller version of the same press architecture plus a simple 24 mm matched die pair.
+This writes `build/mini-test/` containing a much smaller version of the same press architecture plus a simple 18 mm matched die pair.
 
 The mini article is intentionally **not** a uniform scale. Large dimensions are reduced aggressively while printer-sensitive clearances stay at realistic absolute values. This makes it useful for checking:
 
@@ -150,7 +150,7 @@ The mini article is intentionally **not** a uniform scale. Large dimensions are 
 - hard-stop behavior
 - light embossing on paper
 
-The current mini geometry uses an 84 × 92 × 7 mm base, a 115 mm lever, 24 mm dies, two 5 mm guide rods, an approximately 4 mm main pivot, and an approximately 3 mm roller pin. It is a low-force throwaway geometry test, **not** a strength test for the final press.
+The current mini geometry uses a 72 × 80 × 6 mm base, a 95 mm lever, 18 mm dies, two 4 mm guide rods, an approximately 4 mm main pivot, and an approximately 3 mm roller pin. It is a low-force throwaway geometry test, **not** a strength test for the final press.
 
 To minimize waste, print in this order:
 
@@ -158,7 +158,7 @@ To minimize waste, print in this order:
 2. `mini_test_male.stl` + `mini_test_female.stl` and verify die seating/light embossing.
 3. Only then print the remaining miniature press parts.
 
-A starting-point low-filament slicer setup is 0.20 mm layers, 2 walls, 3 top/bottom layers and about 8% infill. Check the slicer's actual gram estimate before starting; increase walls/infill only if the throwaway model is too flexible.
+A starting-point low-filament slicer setup is 0.20 mm layers, 2 walls, 3 top/bottom layers and about 6% infill. Check the slicer's actual gram estimate before starting; increase walls/infill only if the throwaway model is too flexible.
 
 `mini_test_manifest.json` records the exact miniature dimensions and clearly identifies the clearances that were deliberately left unscaled.
 
