@@ -9,6 +9,7 @@ from .cad import (
     mechanical_layout,
     validate_assembly_clearance,
 )
+from .mini import export_mini_test_pack, mini_cartridge_spec, mini_die_spec, mini_press_spec
 from .spec import CartridgeSpec, PressSpec
 
 __all__ = [
@@ -21,4 +22,8 @@ __all__ = [
     "mechanical_layout",
     "validate_assembly_clearance",
     "export_press_pack",
+    "mini_cartridge_spec",
+    "mini_press_spec",
+    "mini_die_spec",
+    "export_mini_test_pack",
 ]
