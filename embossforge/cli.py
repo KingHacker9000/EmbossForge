@@ -9,7 +9,12 @@ import sys
 from . import __version__
 from .artwork import normalize_artwork
 from .calibration import write_calibration_pack
-from .config import DieSpec
+from .config import (
+    PAPER_PRESETS_MM,
+    DieSpec,
+    PrinterProfile,
+    paper_thickness_for_preset,
+)
 from .mechanics import CartridgeSpec, PressSpec, export_mini_test_pack, export_press_pack
 from .mechanics.fit_coupon import export_fit_coupon
 from .micro_die import export_micro_butterfly_test
@@ -30,12 +35,32 @@ def build_parser() -> argparse.ArgumentParser:
     die.add_argument("--diameter", type=float, default=42.0, help="Die diameter in mm")
     die.add_argument("--base", type=float, default=3.0, help="Die base thickness in mm")
     die.add_argument("--relief", type=float, default=0.65, help="Male relief height in mm")
-    die.add_argument("--clearance", type=float, default=0.20, help="Female XY clearance around artwork in mm")
-    die.add_argument("--paper-thickness", type=float, default=0.10, help="Paper thickness in mm")
+    die.add_argument(
+        "--clearance",
+        type=float,
+        default=None,
+        help="Female XY clearance in mm; defaults to printer profile recommendation or 0.20 mm",
+    )
+    die.add_argument(
+        "--paper",
+        choices=sorted(PAPER_PRESETS_MM),
+        help="Paper thickness preset; overridden by --paper-thickness",
+    )
+    die.add_argument(
+        "--paper-thickness",
+        type=float,
+        default=None,
+        help="Exact paper thickness in mm; overrides --paper",
+    )
     die.add_argument("--extra-depth", type=float, default=0.20, help="Extra female cavity depth in mm")
     die.add_argument("--margin", type=float, default=3.0, help="Artwork margin from die edge in mm")
     die.add_argument("--threshold", type=int, default=160, help="Raster threshold 0-255")
     die.add_argument("--invert", action="store_true", help="Use for light artwork on a dark background")
+    die.add_argument(
+        "--profile",
+        type=Path,
+        help="Printer TOML profile; supplies clearance defaults and validates the die against the build volume",
+    )
     die.add_argument("--scad-only", action="store_true", help="Generate OpenSCAD source but do not render STL")
 
     calibration = sub.add_parser("calibrate", help="Generate printer/emboss calibration artifacts")
@@ -157,19 +182,50 @@ def _die(args: argparse.Namespace) -> int:
         invert=args.invert,
     )
 
+    base_spec = DieSpec()
+    profile = PrinterProfile.from_toml(args.profile) if args.profile else None
+
+    if args.paper_thickness is not None:
+        paper_thickness = args.paper_thickness
+        paper_source = "explicit"
+    elif args.paper:
+        paper_thickness = paper_thickness_for_preset(args.paper)
+        paper_source = f"preset:{args.paper}"
+    else:
+        paper_thickness = base_spec.paper_thickness_mm
+        paper_source = "default"
+
+    if args.clearance is not None:
+        clearance = args.clearance
+        clearance_source = "explicit"
+    elif profile is not None:
+        clearance = profile.recommended_die_clearance_mm
+        clearance_source = f"profile:{profile.name}"
+    else:
+        clearance = base_spec.female_xy_clearance_mm
+        clearance_source = "default"
+
     spec = replace(
-        DieSpec(),
+        base_spec,
         diameter_mm=args.diameter,
         base_thickness_mm=args.base,
         relief_height_mm=args.relief,
-        female_xy_clearance_mm=args.clearance,
-        paper_thickness_mm=args.paper_thickness,
+        female_xy_clearance_mm=clearance,
+        paper_thickness_mm=paper_thickness,
         female_extra_depth_mm=args.extra_depth,
         margin_mm=args.margin,
     )
+    spec.validate()
+    if profile is not None:
+        profile.validate_die(spec)
+
     outputs = generate_die_pair(normalized, out, name, spec, render_stl=not args.scad_only)
 
     print(f"Generated die pair: {name}")
+    if profile is not None:
+        print(f"  printer profile: {profile.name}")
+    print(f"  paper thickness: {paper_thickness:.3f} mm ({paper_source})")
+    print(f"  female clearance: {clearance:.3f} mm ({clearance_source})")
     print(f"  normalized artwork: {normalized}")
     for key, path in outputs.items():
         print(f"  {key}: {path}")
