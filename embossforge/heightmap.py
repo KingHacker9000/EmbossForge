@@ -19,6 +19,7 @@ class HeightMapResult:
     width_px: int
     height_px: int
     mm_per_sample: float
+    filtered_pixels: int = 0
 
 
 def build_height_map(
@@ -86,7 +87,7 @@ def build_height_map(
 
     relief = np.clip(relief, 0.0, 1.0)
     relief[relief < relief_spec.zero_threshold] = 0.0
-    relief = np.power(relief, relief_spec.gamma, dtype=np.float32)
+    relief = np.power(relief, relief_spec.gamma).astype(np.float32)
 
     if relief_spec.smoothing_mm > 0:
         sigma = relief_spec.smoothing_mm / max(mm_per_sample, 1e-9)
@@ -99,6 +100,10 @@ def build_height_map(
         relief = np.round(relief * (levels - 1)) / float(levels - 1)
 
     _apply_circular_artwork_mask(relief, spec)
+
+    filtered_pixels = 0
+    if profile is not None and relief_spec.auto_filter_subresolution:
+        relief, filtered_pixels = _filter_subresolution_positive_features(relief, mm_per_sample, profile)
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -120,6 +125,7 @@ def build_height_map(
         width_px=target_px,
         height_px=target_px,
         mm_per_sample=mm_per_sample,
+        filtered_pixels=filtered_pixels,
     )
 
 
@@ -178,6 +184,32 @@ def _sampling_target(
     target = int(math.ceil(spec.artwork_box_mm / max(mm_per_sample, 1e-6)))
     target = max(96, min(1024, target))
     return target, spec.artwork_box_mm / target
+
+
+def _filter_subresolution_positive_features(
+    relief: np.ndarray,
+    mm_per_sample: float,
+    profile: PrinterProfile,
+) -> tuple[np.ndarray, int]:
+    """Remove positive regions too narrow to be a stable shared male master.
+
+    The female is derived *after* this filter, preventing asymmetric feature loss.
+    This intentionally favors compatibility over retaining every sub-nozzle detail.
+    """
+    active = (relief > 0).astype(np.uint8) * 255
+    diameter_px = max(1, int(math.ceil(profile.min_feature_mm / max(mm_per_sample, 1e-9))))
+    if diameter_px <= 1:
+        return relief, 0
+    if diameter_px % 2 == 0:
+        diameter_px += 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (diameter_px, diameter_px))
+    opened = cv2.morphologyEx(active, cv2.MORPH_OPEN, kernel)
+    removed = (active > 0) & (opened == 0)
+    count = int(np.count_nonzero(removed))
+    if count:
+        relief = relief.copy()
+        relief[removed] = 0.0
+    return relief, count
 
 
 def _apply_circular_artwork_mask(relief: np.ndarray, spec: DieSpec) -> None:
