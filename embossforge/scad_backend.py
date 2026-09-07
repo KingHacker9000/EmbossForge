@@ -29,6 +29,20 @@ def find_openscad() -> Path | None:
     return None
 
 
+def render_scad(source_scad: str | Path, output_stl: str | Path) -> Path:
+    """Render one OpenSCAD source file to STL using the local OpenSCAD binary."""
+    openscad = find_openscad()
+    if openscad is None:
+        raise RuntimeError(
+            "OpenSCAD executable was not found. Add it to PATH or install it in the default location."
+        )
+    source = Path(source_scad)
+    output = Path(output_stl)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    _render(openscad, source, output)
+    return output
+
+
 def generate_die_pair(
     artwork_svg: str | Path,
     output_dir: str | Path,
@@ -57,15 +71,9 @@ def generate_die_pair(
         "manifest": manifest,
     }
 
-    openscad = find_openscad()
     if render_stl:
-        if openscad is None:
-            raise RuntimeError(
-                "OpenSCAD executable was not found. Add it to PATH or install it in the default location. "
-                "The .scad files were still generated."
-            )
-        _render(openscad, male_scad, male_stl)
-        _render(openscad, female_scad, female_stl)
+        render_scad(male_scad, male_stl)
+        render_scad(female_scad, female_stl)
         outputs["male_stl"] = male_stl
         outputs["female_stl"] = female_stl
 
