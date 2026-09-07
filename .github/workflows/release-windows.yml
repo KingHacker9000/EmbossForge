@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Check out repository
@@ -52,21 +52,63 @@ jobs:
             tests/test_calibration.py `
             tests/test_config.py `
             tests/test_generator.py `
+            tests/test_mating.py `
             tests/test_micro_die.py `
-            tests/test_scad_backend.py
+            tests/test_relief.py `
+            tests/test_relief_generator.py `
+            tests/test_scad_backend.py `
+            tests/test_shaded_reference.py
           exit $LASTEXITCODE
 
-      - name: Verify real STL generation on Windows
+      - name: Verify real binary STL generation on Windows
         shell: pwsh
         run: |
-          python -c "from pathlib import Path; from embossforge.micro_die import export_micro_butterfly_test; r=export_micro_butterfly_test(Path('build/release-smoke')); assert Path(r['male_stl']).is_file(); assert Path(r['female_stl']).is_file(); print('Windows STL generation OK')"
+          python -c "from pathlib import Path; from embossforge.micro_die import export_micro_butterfly_test; r=export_micro_butterfly_test(Path('build/release-smoke')); assert Path(r['male_stl']).is_file(); assert Path(r['female_stl']).is_file(); print('Windows binary STL generation OK')"
           exit $LASTEXITCODE
 
-      - name: Smoke-test desktop window
+      - name: Verify variable-depth STL generation and closure on Windows
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import cv2
+          import numpy as np
+          from embossforge.config import adventurer_5m_profile
+          from embossforge.generator import DieGenerationRequest, generate_die
+          from embossforge.relief import ArtworkMode, ReliefSpec, ReliefStyle, SourceInterpretation
+
+          root = Path("build/release-relief")
+          root.mkdir(parents=True, exist_ok=True)
+          image = np.full((96, 96), 255, dtype=np.uint8)
+          cv2.circle(image, (48, 48), 30, 110, -1)
+          cv2.circle(image, (48, 48), 17, 35, -1)
+          source = root / "heightmap.png"
+          assert cv2.imwrite(str(source), image)
+          result = generate_die(DieGenerationRequest(
+              artwork=source,
+              output_root=root,
+              name="relief-smoke",
+              printer_profile=adventurer_5m_profile(),
+              artwork_mode=ArtworkMode.RELIEF,
+              source_interpretation=SourceInterpretation.HEIGHT_MAP,
+              relief=ReliefSpec(max_relief_mm=0.30, style=ReliefStyle.STEPPED, levels=4),
+              allow_risky=True,
+              render_stl=True,
+          ))
+          assert result.male_stl and result.male_stl.is_file()
+          assert result.female_stl and result.female_stl.is_file()
+          assert not result.validation.has_errors
+          assert "exported-stl-closure" in result.validation.verification_level
+          print("Windows relief STL + closure OK")
+          '@ | Set-Content -Encoding utf8 build_relief_smoke.py
+          python build_relief_smoke.py
+          exit $LASTEXITCODE
+
+      - name: Smoke-test completed desktop window
         shell: pwsh
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
-          python -c "from PySide6.QtWidgets import QApplication; from embossforge.gui import MainWindow; app=QApplication([]); w=MainWindow(); assert w.windowTitle() == 'EmbossForge'; print('desktop window OK')"
+          python -c "from PySide6.QtWidgets import QApplication; from embossforge.gui_vnext import MainWindow; app=QApplication([]); w=MainWindow(); assert w.windowTitle() == 'EmbossForge'; assert w.source_interpretation.count() >= 2; print('completed desktop window OK')"
           exit $LASTEXITCODE
 
       - name: Build portable desktop app
