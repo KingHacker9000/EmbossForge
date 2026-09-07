@@ -15,14 +15,28 @@ class DieSpec:
     paper_thickness_mm: float = 0.10
     margin_mm: float = 3.0
     facets: int = 160
+    # Hidden orientation key on the carrier base. The artwork/embossing face
+    # remains circular; the tab sits outside the nominal die diameter and is
+    # captured by the cartridge pocket.
+    key_width_mm: float = 6.0
+    key_depth_mm: float = 2.5
 
     @property
     def artwork_box_mm(self) -> float:
         return self.diameter_mm - 2 * self.margin_mm
 
     @property
+    def artwork_radius_mm(self) -> float:
+        return self.diameter_mm / 2 - self.margin_mm
+
+    @property
     def female_cavity_depth_mm(self) -> float:
         return self.relief_height_mm + self.paper_thickness_mm + self.female_extra_depth_mm
+
+    @property
+    def carrier_depth_mm(self) -> float:
+        """Overall Y envelope including the hidden orientation tab."""
+        return self.diameter_mm + self.key_depth_mm
 
     def validate(self) -> None:
         positive = {
@@ -31,6 +45,8 @@ class DieSpec:
             "relief_height_mm": self.relief_height_mm,
             "paper_thickness_mm": self.paper_thickness_mm,
             "facets": float(self.facets),
+            "key_width_mm": self.key_width_mm,
+            "key_depth_mm": self.key_depth_mm,
         }
         for name, value in positive.items():
             if value <= 0:
@@ -43,6 +59,8 @@ class DieSpec:
             raise ValueError("margin_mm must be >= 0")
         if self.artwork_box_mm <= 0:
             raise ValueError("margin leaves no printable artwork area")
+        if self.key_width_mm >= self.diameter_mm:
+            raise ValueError("key_width_mm must be smaller than die diameter")
         if self.female_cavity_depth_mm >= self.base_thickness_mm:
             raise ValueError(
                 "female cavity is deeper than the female die base; increase base thickness "
