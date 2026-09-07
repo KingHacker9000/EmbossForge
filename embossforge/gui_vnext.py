@@ -80,10 +80,18 @@ class MainWindow(legacy.MainWindow):
             return
 
         full_request = replace(request, render_stl=True)
-        if self._pending_shaded_request == full_request:
-            self._pending_shaded_request = None
-            self._start_generation(full_request, preview_only=False)
-            return
+        if self._pending_shaded_request is not None:
+            # A preview may have required an explicit paper-risk override. Preserve
+            # that accepted risk bit when comparing against the freshly collected
+            # UI request so accepting the preview does not force a second preview.
+            candidate = replace(
+                full_request,
+                allow_risky=self._pending_shaded_request.allow_risky,
+            )
+            if self._pending_shaded_request == candidate:
+                self._pending_shaded_request = None
+                self._start_generation(candidate, preview_only=False)
+                return
 
         # First pass converts + validates the reference but deliberately stops
         # before STL rendering so the user can inspect the machine interpretation.
