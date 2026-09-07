@@ -39,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--source-interpretation",
         choices=[s.value for s in SourceInterpretation],
         default=None,
-        help="What uploaded pixels mean: flat-artwork, height-map, or shaded-reference",
+        help="What uploaded pixels mean: flat-artwork, true height-map, or shaded-reference conversion",
     )
     die.add_argument("--relief-max", type=float, default=None, help="Maximum variable-depth relief in mm")
     die.add_argument(
@@ -200,7 +200,7 @@ def _doctor() -> int:
 
 def _gui() -> int:
     try:
-        from .gui import main as gui_main
+        from .gui_vnext import main as gui_main
     except ImportError as exc:
         raise RuntimeError(
             "Desktop UI dependencies are not installed. Run: pip install -e \".[gui]\""
