@@ -1,5 +1,7 @@
 #define MyAppName "EmbossForge"
+#ifndef MyAppVersion
 #define MyAppVersion "0.1.0"
+#endif
 #define MyAppPublisher "EmbossForge contributors"
 #define MyAppExeName "EmbossForge.exe"
 
