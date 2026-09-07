@@ -25,12 +25,7 @@ def _cq():
 
 @dataclass(frozen=True)
 class MicroTongsSpec:
-    """Ultra-light one-piece PLA flexure tongs for the 16 mm butterfly dies.
-
-    The two long ladder-style arms act as leaf springs. There is no pivot,
-    guide rod, cartridge, roller, screw, or other hardware. Existing male/female
-    dies load directly into shallow keyed pockets in the opposing jaws.
-    """
+    """Ultra-light one-piece PLA flexure tongs for the 16 mm butterfly dies."""
 
     arm_length_mm: float = 72.0
     arm_thickness_mm: float = 3.0
@@ -38,7 +33,7 @@ class MicroTongsSpec:
     spring_rung_depth_mm: float = 1.8
     spring_rung_pitch_mm: float = 12.0
     rear_bridge_depth_mm: float = 8.0
-    open_jaw_surface_gap_mm: float = 5.2
+    open_jaw_surface_gap_mm: float = 4.2
 
     jaw_outer_diameter_mm: float = 20.5
     jaw_center_from_rear_mm: float = 70.0
@@ -69,10 +64,24 @@ class MicroTongsSpec:
         return 2 * self.arm_thickness_mm + self.open_jaw_surface_gap_mm
 
     @property
-    def required_closed_surface_gap_mm(self) -> float:
+    def exposed_die_base_mm(self) -> float:
         die = micro_butterfly_spec()
-        exposed_per_die = die.base_thickness_mm - self.die_pocket_depth_mm + die.relief_height_mm
-        return 2 * exposed_per_die + die.paper_thickness_mm
+        return die.base_thickness_mm - self.die_pocket_depth_mm
+
+    @property
+    def required_closed_surface_gap_mm(self) -> float:
+        # At closure the male relief enters the female cavity, so relief height
+        # must not be counted as a second protruding jaw. The surrounding flat
+        # die faces are separated by the selected paper thickness.
+        die = micro_butterfly_spec()
+        return 2 * self.exposed_die_base_mm + die.paper_thickness_mm
+
+    @property
+    def open_die_face_clearance_mm(self) -> float:
+        die = micro_butterfly_spec()
+        male_peak = self.exposed_die_base_mm + die.relief_height_mm
+        female_face = self.exposed_die_base_mm
+        return self.open_jaw_surface_gap_mm - male_peak - female_face
 
     @property
     def required_total_flex_mm(self) -> float:
@@ -249,13 +258,10 @@ def export_micro_press_pack(
     die_pocket_clearance_mm: float = 0.15,
 ) -> dict[str, str]:
     """Export the ultra-light one-piece butterfly flexure tongs."""
-    del slide_clearance_mm  # obsolete cartridge-era compatibility argument
+    del slide_clearance_mm
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # Remove outputs from the discarded rod-guided micro-press revision so a
-    # user cannot accidentally slice top_bridge.stl/base.stl/etc. after pulling
-    # the new tong design into an existing build directory.
     legacy_mechanics = out / "mechanics"
     if legacy_mechanics.exists():
         shutil.rmtree(legacy_mechanics)
@@ -287,6 +293,8 @@ def export_micro_press_pack(
         },
         "tongs_spec": asdict(spec),
         "derived": {
+            "exposed_die_base_mm": spec.exposed_die_base_mm,
+            "open_die_face_clearance_mm": spec.open_die_face_clearance_mm,
             "required_closed_surface_gap_mm": spec.required_closed_surface_gap_mm,
             "required_total_flex_mm": spec.required_total_flex_mm,
             "required_flex_per_arm_mm": spec.required_flex_per_arm_mm,
