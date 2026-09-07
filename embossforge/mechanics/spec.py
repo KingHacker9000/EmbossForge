@@ -36,7 +36,7 @@ class CartridgeSpec:
     receiver_wall_mm: float = 3.0
     receiver_floor_mm: float = 1.5
     receiver_rear_wall_mm: float = 3.5
-    receiver_height_mm: float = 8.0
+    receiver_height_mm: float = 6.5
 
     front_finger_notch_radius_mm: float = 7.0
     front_finger_notch_depth_mm: float = 3.0
@@ -111,9 +111,9 @@ class CartridgeSpec:
 class PressSpec:
     """Dimensions for the V0.2 rod-guided lever press prototype.
 
-    The upper platen slides on two 8 mm guide rods outside the cartridge. This
-    avoids relying on printed sliding towers in the high-load area and makes the
-    upper receiver easy to remove/inspect.
+    The upper platen slides on two 8 mm guide rods outside the cartridge. A
+    small transverse roller under the lever contacts the platen so the lever
+    itself never scrapes across the printed platen.
     """
 
     base_width_mm: float = 130.0
@@ -126,7 +126,6 @@ class PressSpec:
     cheek_spacing_mm: float = 104.0
 
     pivot_diameter_mm: float = 6.4
-    pivot_axis_height_above_base_mm: float = 52.0
     throat_depth_mm: float = 67.0
 
     lever_width_mm: float = 28.0
@@ -134,6 +133,17 @@ class PressSpec:
     lever_length_mm: float = 205.0
     lever_rear_overhang_mm: float = 24.0
     lever_pivot_to_platen_mm: float = 36.0
+
+    contact_roller_diameter_mm: float = 12.0
+    contact_roller_width_mm: float = 16.0
+    contact_roller_pin_diameter_mm: float = 5.2
+    contact_roller_drop_mm: float = 12.0
+    contact_clearance_mm: float = 0.20
+    lever_ear_thickness_mm: float = 5.0
+    lever_ear_depth_mm: float = 18.0
+    lever_ear_pin_margin_mm: float = 1.0
+    lever_ear_overlap_mm: float = 1.0
+    platen_ear_relief_depth_mm: float = 2.0
 
     platen_width_mm: float = 100.0
     platen_depth_mm: float = 46.0
@@ -147,7 +157,7 @@ class PressSpec:
 
     top_bridge_depth_mm: float = 30.0
     top_bridge_thickness_mm: float = 12.0
-    top_bridge_bottom_above_base_mm: float = 70.0
+    top_bridge_bottom_above_base_mm: float = 82.0
 
     stop_sleeve_outer_diameter_mm: float = 12.0
     stop_sleeve_rod_clearance_mm: float = 0.50
@@ -173,14 +183,16 @@ class PressSpec:
             raise ValueError("Platen contact must lie on the forward lever arm")
         if self.closed_face_gap_mm >= self.open_face_gap_mm:
             raise ValueError("Closed face gap must be smaller than open face gap")
-        if self.pivot_axis_height_above_base_mm >= self.side_cheek_height_mm:
-            raise ValueError("Pivot must lie inside the side cheek")
-        if self.top_bridge_bottom_above_base_mm + self.top_bridge_thickness_mm > self.side_cheek_height_mm:
-            raise ValueError("Top bridge must fit within the side-cheek height")
+        if self.top_bridge_bottom_above_base_mm < self.side_cheek_height_mm:
+            raise ValueError("Top bridge overlaps the side cheeks; it must sit at or above their top")
         if self.guide_rod_spacing_mm >= self.platen_width_mm - self.guide_rod_diameter_mm:
             raise ValueError("Guide rods are too close to the platen edges")
         if self.stop_sleeve_outer_diameter_mm <= self.guide_rod_diameter_mm + self.stop_sleeve_rod_clearance_mm:
             raise ValueError("Stop sleeve needs positive wall thickness")
+        if self.contact_roller_width_mm + 2 * self.lever_ear_thickness_mm > self.lever_width_mm:
+            raise ValueError("Roller and ears do not fit within lever width")
+        if self.contact_roller_drop_mm <= self.lever_thickness_mm / 2:
+            raise ValueError("Roller pin must sit below the lever body")
 
     @property
     def nominal_lever_ratio(self) -> float:
