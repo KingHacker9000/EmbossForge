@@ -1,202 +1,279 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import json
+import math
 from pathlib import Path
+from typing import Any
 
 from ..micro_die import micro_butterfly_spec
-from .cad import export_press_pack, mechanical_layout
-from .spec import CartridgeSpec, PressSpec
+from .cad import export_part
 
 
-def micro_press_cartridge_spec(
-    *,
-    slide_clearance_mm: float = 0.25,
-    die_pocket_clearance_mm: float = 0.18,
-) -> CartridgeSpec:
-    """Cartridge sized specifically for the existing 16 mm butterfly-test dies.
+PLA_DENSITY_G_CM3 = 1.24
 
-    The die diameter, base thickness, key width and key depth are imported from
-    ``micro_butterfly_spec`` so the press cannot silently drift away from the
-    already-printed test pair. Printer-sensitive pocket/slide clearances remain
-    explicit and adjustable.
+
+def _cq():
+    try:
+        import cadquery as cq
+    except ImportError as exc:  # pragma: no cover - optional CAD dependency
+        raise RuntimeError(
+            'CadQuery is required for micro-tongs generation. Install with: pip install -e ".[cad]"'
+        ) from exc
+    return cq
+
+
+@dataclass(frozen=True)
+class MicroTongsSpec:
+    """Ultra-light one-piece PLA flexure tongs for the 16 mm butterfly dies.
+
+    The two long arms act as leaf springs. There is no pivot, guide rod,
+    cartridge, roller, or separate hardware. The existing male/female dies load
+    directly into shallow keyed pockets in the opposing jaws.
     """
+
+    arm_length_mm: float = 72.0
+    arm_width_mm: float = 7.0
+    arm_thickness_mm: float = 3.0
+    rear_bridge_depth_mm: float = 8.0
+    open_jaw_surface_gap_mm: float = 5.2
+
+    jaw_outer_diameter_mm: float = 20.5
+    jaw_center_from_rear_mm: float = 70.0
+    die_pocket_depth_mm: float = 1.15
+    die_pocket_clearance_mm: float = 0.15
+    removal_notch_radius_mm: float = 2.2
+
+    def validate(self) -> None:
+        for name, value in self.__dict__.items():
+            if name.endswith("_mm") and value <= 0:
+                raise ValueError(f"{name} must be positive")
+        die = micro_butterfly_spec()
+        if self.jaw_outer_diameter_mm <= die.diameter_mm + 2 * self.die_pocket_clearance_mm + 2.0:
+            raise ValueError("Micro-tongs jaw is too small to leave a useful wall around the die")
+        if self.die_pocket_depth_mm >= die.base_thickness_mm:
+            raise ValueError("Die pocket must leave part of the die base exposed for removal")
+        if self.arm_length_mm <= self.jaw_center_from_rear_mm - self.jaw_outer_diameter_mm / 2:
+            raise ValueError("Arm is too short to support the jaw")
+        if self.open_jaw_surface_gap_mm <= self.required_closed_surface_gap_mm:
+            raise ValueError("Open jaw gap must exceed the nominal closed jaw gap")
+
+    @property
+    def total_stack_height_mm(self) -> float:
+        return 2 * self.arm_thickness_mm + self.open_jaw_surface_gap_mm
+
+    @property
+    def required_closed_surface_gap_mm(self) -> float:
+        die = micro_butterfly_spec()
+        exposed_per_die = die.base_thickness_mm - self.die_pocket_depth_mm + die.relief_height_mm
+        return 2 * exposed_per_die + die.paper_thickness_mm
+
+    @property
+    def required_total_flex_mm(self) -> float:
+        return self.open_jaw_surface_gap_mm - self.required_closed_surface_gap_mm
+
+    @property
+    def required_flex_per_arm_mm(self) -> float:
+        return self.required_total_flex_mm / 2
+
+
+def micro_tongs_spec(*, die_pocket_clearance_mm: float = 0.15) -> MicroTongsSpec:
+    spec = MicroTongsSpec(die_pocket_clearance_mm=die_pocket_clearance_mm)
+    spec.validate()
+    return spec
+
+
+def _keyed_pocket(spec: MicroTongsSpec, *, z0: float) -> Any:
+    """Return the direct keyed socket for the existing butterfly die contract."""
+    cq = _cq()
     die = micro_butterfly_spec()
-    spec = CartridgeSpec(
-        die_diameter_mm=die.diameter_mm,
-        die_base_thickness_mm=die.base_thickness_mm,
-        die_key_width_mm=die.key_width_mm,
-        die_key_depth_mm=die.key_depth_mm,
-        die_pocket_clearance_mm=die_pocket_clearance_mm,
-        die_seat_recess_mm=0.05,
-        body_width_mm=22.0,
-        body_depth_mm=24.0,
-        body_thickness_mm=3.2,
-        side_rail_extension_mm=1.4,
-        side_rail_height_mm=1.2,
-        side_rail_center_z_mm=1.7,
-        side_rail_front_setback_mm=1.5,
-        side_rail_rear_setback_mm=1.5,
-        receiver_slide_clearance_mm=slide_clearance_mm,
-        receiver_wall_mm=1.6,
-        receiver_floor_mm=1.0,
-        receiver_rear_wall_mm=1.8,
-        receiver_height_mm=3.9,
-        front_finger_notch_radius_mm=3.5,
-        front_finger_notch_depth_mm=1.3,
+    jaw_y = spec.jaw_center_from_rear_mm
+    clear = spec.die_pocket_clearance_mm
+    depth = spec.die_pocket_depth_mm
+
+    circle = (
+        cq.Workplane("XY")
+        .center(0, jaw_y)
+        .circle((die.diameter_mm + 2 * clear) / 2)
+        .extrude(depth)
+        .translate((0, 0, z0))
     )
-    spec.validate()
-    return spec
+
+    overlap = 0.5
+    tab_depth = die.key_depth_mm + overlap + 2 * clear
+    tab_y = jaw_y + die.diameter_mm / 2 + (die.key_depth_mm - overlap) / 2
+    tab = (
+        cq.Workplane("XY")
+        .center(0, tab_y)
+        .rect(die.key_width_mm + 2 * clear, tab_depth)
+        .extrude(depth)
+        .translate((0, 0, z0))
+    )
+    return circle.union(tab)
 
 
-def micro_press_spec() -> PressSpec:
-    """Very small, low-force rod-guided press for the 16 mm butterfly pair.
+def build_micro_tongs(spec: MicroTongsSpec | None = None):
+    """Build the one-piece flexure tongs in use orientation.
 
-    This intentionally reuses the validated EmbossForge press kinematics rather
-    than introducing a separate hand-modelled mechanism. It is a cheap geometry,
-    alignment and usability article only; it is not a strength qualification.
+    Lower die pocket opens upward. Upper die pocket opens downward with the same
+    +Y key direction, matching the established upper-die 180-degree Y rotation.
     """
-    spec = PressSpec(
-        base_width_mm=58.0,
-        base_depth_mm=65.0,
-        base_thickness_mm=5.0,
-        side_cheek_thickness_mm=4.5,
-        side_cheek_height_mm=34.0,
-        side_cheek_depth_mm=30.0,
-        cheek_spacing_mm=48.0,
-        pivot_diameter_mm=3.4,
-        throat_depth_mm=30.0,
-        lever_width_mm=11.0,
-        lever_thickness_mm=5.0,
-        lever_length_mm=80.0,
-        lever_rear_overhang_mm=10.0,
-        lever_pivot_to_platen_mm=15.0,
-        contact_roller_diameter_mm=6.0,
-        contact_roller_width_mm=5.5,
-        contact_roller_pin_diameter_mm=2.6,
-        contact_roller_drop_mm=6.2,
-        contact_clearance_mm=0.20,
-        lever_ear_thickness_mm=2.2,
-        lever_ear_depth_mm=7.0,
-        lever_ear_pin_margin_mm=0.6,
-        lever_ear_overlap_mm=0.6,
-        platen_ear_relief_depth_mm=0.8,
-        platen_width_mm=44.0,
-        platen_depth_mm=22.0,
-        platen_thickness_mm=5.0,
-        guide_rod_diameter_mm=3.0,
-        guide_rod_spacing_mm=34.0,
-        guide_rod_platen_clearance_mm=0.45,
-        guide_rod_socket_clearance_mm=0.25,
-        guide_rod_socket_depth_mm=3.5,
-        top_bridge_depth_mm=15.0,
-        top_bridge_thickness_mm=5.0,
-        top_bridge_bottom_above_base_mm=34.0,
-        stop_sleeve_outer_diameter_mm=6.0,
-        stop_sleeve_rod_clearance_mm=0.45,
-        open_face_gap_mm=5.5,
-        closed_face_gap_mm=0.20,
-        nominal_die_relief_mm=0.45,
-        mounting_hole_diameter_mm=3.2,
-        mounting_hole_edge_offset_mm=6.0,
-    )
+    spec = spec or micro_tongs_spec()
     spec.validate()
-    return spec
+    cq = _cq()
+
+    t = spec.arm_thickness_mm
+    gap = spec.open_jaw_surface_gap_mm
+    upper_z = t + gap
+    jaw_y = spec.jaw_center_from_rear_mm
+    rear_y = 0.0
+    arm_center_y = spec.arm_length_mm / 2
+
+    lower_arm = (
+        cq.Workplane("XY")
+        .center(0, arm_center_y)
+        .box(spec.arm_width_mm, spec.arm_length_mm, t, centered=(True, True, False))
+    )
+    upper_arm = lower_arm.translate((0, 0, upper_z))
+
+    # Solid rear bridge. Flexure comes from the long, slender PLA arms rather
+    # than a fragile sub-millimetre living hinge.
+    bridge = (
+        cq.Workplane("XY")
+        .center(0, rear_y + spec.rear_bridge_depth_mm / 2)
+        .box(
+            spec.arm_width_mm,
+            spec.rear_bridge_depth_mm,
+            spec.total_stack_height_mm,
+            centered=(True, True, False),
+        )
+    )
+
+    lower_jaw = (
+        cq.Workplane("XY")
+        .center(0, jaw_y)
+        .circle(spec.jaw_outer_diameter_mm / 2)
+        .extrude(t)
+    )
+    upper_jaw = lower_jaw.translate((0, 0, upper_z))
+
+    body = lower_arm.union(upper_arm).union(bridge).union(lower_jaw).union(upper_jaw)
+
+    # Lower pocket opens from the upper face of the lower jaw.
+    lower_pocket = _keyed_pocket(spec, z0=t - spec.die_pocket_depth_mm)
+    body = body.cut(lower_pocket)
+
+    # Upper pocket opens from the lower face of the upper jaw.
+    upper_pocket = _keyed_pocket(spec, z0=upper_z)
+    body = body.cut(upper_pocket)
+
+    # Small opposing fingernail/removal scallops at the front edges of both
+    # sockets so the already-printed dies can be popped back out.
+    notch_y = jaw_y + spec.jaw_outer_diameter_mm / 2
+    lower_notch = (
+        cq.Workplane("XY")
+        .center(0, notch_y)
+        .circle(spec.removal_notch_radius_mm)
+        .extrude(spec.die_pocket_depth_mm + 0.4)
+        .translate((0, 0, t - spec.die_pocket_depth_mm))
+    )
+    upper_notch = (
+        cq.Workplane("XY")
+        .center(0, notch_y)
+        .circle(spec.removal_notch_radius_mm)
+        .extrude(spec.die_pocket_depth_mm + 0.4)
+        .translate((0, 0, upper_z))
+    )
+    return body.cut(lower_notch).cut(upper_notch)
+
+
+def build_micro_tongs_print_orientation(spec: MicroTongsSpec | None = None):
+    """Rotate onto the side so both spring arms are supported by the bed.
+
+    The die recesses are only shallow sideways pockets in this orientation;
+    they should not require a forest of support material.
+    """
+    part = build_micro_tongs(spec)
+    return part.rotate((0, 0, 0), (0, 1, 0), 90)
+
+
+def _solid_mass_g(part: Any) -> float:
+    volume_mm3 = float(part.val().Volume())
+    return volume_mm3 / 1000.0 * PLA_DENSITY_G_CM3
 
 
 def export_micro_press_pack(
     out_dir: str | Path,
     *,
     slide_clearance_mm: float = 0.25,
-    die_pocket_clearance_mm: float = 0.18,
+    die_pocket_clearance_mm: float = 0.15,
 ) -> dict[str, str]:
-    """Export a tiny press that directly accepts ``butterfly-test`` dies.
+    """Export the ultra-light one-piece butterfly flexure tongs.
 
-    The pack deliberately does not regenerate the butterfly dies. Its purpose is
-    to reuse the already-printed 16 mm male/female pair and validate a real lever
-    press with as little additional material as practical.
+    ``slide_clearance_mm`` is accepted for backward CLI compatibility but is no
+    longer used: there are no cartridges or sliding receivers in this design.
     """
+    del slide_clearance_mm
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     die = micro_butterfly_spec()
-    cartridge = micro_press_cartridge_spec(
-        slide_clearance_mm=slide_clearance_mm,
-        die_pocket_clearance_mm=die_pocket_clearance_mm,
-    )
-    press = micro_press_spec()
-    layout = mechanical_layout(cartridge, press)
-    mechanics_dir = out / "mechanics"
-    outputs = export_press_pack(mechanics_dir, cartridge=cartridge, press=press)
+    spec = micro_tongs_spec(die_pocket_clearance_mm=die_pocket_clearance_mm)
+    use_part = build_micro_tongs(spec)
+    print_part = build_micro_tongs_print_orientation(spec)
 
-    # Correct generic production hardware labels emitted by export_press_pack.
-    mechanics_manifest_path = Path(outputs["manifest"])
-    mechanics_manifest = json.loads(mechanics_manifest_path.read_text(encoding="utf-8"))
-    mechanics_manifest["status"] = (
-        "Micro Embosser - exact 16 mm butterfly-test compatibility; low force only"
-    )
-    mechanics_manifest["hardware"]["main_pivot"]["nominal"] = (
-        "M3 bolt / ~3.2-3.4 mm smooth pin"
-    )
-    mechanics_manifest["hardware"]["roller_pin"]["nominal"] = (
-        "M2.5 bolt / ~2.5 mm smooth pin"
-    )
-    mechanics_manifest_path.write_text(
-        json.dumps(mechanics_manifest, indent=2) + "\n", encoding="utf-8"
-    )
+    stl = export_part(print_part, out / "micro_butterfly_tongs.stl")
+    step = export_part(use_part, out / "micro_butterfly_tongs.step")
+    solid_mass = _solid_mass_g(use_part)
 
     manifest_path = out / "micro_press_manifest.json"
     manifest = {
-        "mode": "micro-butterfly-press",
+        "mode": "micro-butterfly-flexure-tongs",
         "purpose": (
-            "Tiny low-force lever press for the already-printed EmbossForge 16 mm butterfly-test die pair. "
-            "Validates die seating, cartridge insertion, alignment, lever motion and light embossing."
+            "Ultra-low-material hand embosser for the already-printed 16 mm butterfly-test pair. "
+            "The two PLA arms flex like tongs; there is no pivot, guide rod, cartridge, roller, or other hardware."
         ),
-        "strength_status": "prototype / low force only",
+        "physical_status": "unvalidated prototype / light hand force only",
         "compatible_die_command": "embossforge butterfly-test",
         "exact_die_contract_mm": {
             "diameter": die.diameter_mm,
             "base_thickness": die.base_thickness_mm,
             "key_width": die.key_width_mm,
             "key_depth": die.key_depth_mm,
-            "nominal_relief": die.relief_height_mm,
+            "relief": die.relief_height_mm,
         },
-        "fit_clearances_mm": {
-            "die_pocket_per_side": die_pocket_clearance_mm,
-            "cartridge_receiver_per_side": slide_clearance_mm,
+        "tongs_spec": asdict(spec),
+        "derived": {
+            "required_closed_surface_gap_mm": spec.required_closed_surface_gap_mm,
+            "required_total_flex_mm": spec.required_total_flex_mm,
+            "required_flex_per_arm_mm": spec.required_flex_per_arm_mm,
+            "solid_pla_mass_upper_bound_g": round(solid_mass, 2),
         },
-        "nominal_dimensions_mm": {
-            "base": [press.base_width_mm, press.base_depth_mm, press.base_thickness_mm],
-            "lever_length": press.lever_length_mm,
-            "cartridge_body": [
-                cartridge.body_width_mm,
-                cartridge.body_depth_mm,
-                cartridge.body_thickness_mm,
-            ],
-            "guide_rod_diameter": press.guide_rod_diameter_mm,
-            "guide_rod_length": layout["guide_rod_length"],
-            "pivot_bore": press.pivot_diameter_mm,
-            "roller_pin_bore": press.contact_roller_pin_diameter_mm,
-            "nominal_lever_ratio": press.nominal_lever_ratio,
+        "print": {
+            "stl_orientation": "pre-rotated onto its side so both spring arms are supported",
+            "recommended_layer_height_mm": 0.20,
+            "recommended_walls": 3,
+            "recommended_infill_percent": 10,
+            "supports": "normally off; inspect the shallow sideways die sockets in slicer preview",
+            "important": "Use the slicer's own grams estimate before printing.",
         },
-        "recommended_print_order": [
-            "1) Print ONE cartridge.stl first and confirm the existing 16 mm butterfly die drops into the keyed pocket without force.",
-            "2) If the die fit is good, print the second cartridge plus the two receivers and confirm sliding fit.",
-            "3) Only then print the base, cheeks, bridge, platen, lever, roller and stops.",
+        "use": [
+            "Press the male butterfly die into the lower keyed socket and the female die into the opposing upper socket.",
+            "The rectangular tabs must sit in the matching +Y key extensions; do not rotate the dies independently.",
+            "Insert paper between the die faces and squeeze the two long arms together like tongs.",
+            "Stop once the emboss forms. Do not fold the arms flat together or repeatedly over-flex PLA.",
+            "Use the front scallops to remove the dies with a fingernail or thin plastic pick.",
         ],
-        "assembly_notes": [
-            "Male die goes in the lower cartridge; female die goes in the upper cartridge.",
-            "Keep the rectangular die key seated in the matching cartridge key pocket; do not rotate either die independently.",
-            "The upper cartridge/receiver is installed flipped by the same transform used by the full EmbossForge press.",
-            "Use two 3 mm smooth guide rods, one M3-class main pivot, and one M2.5-class roller pin.",
-            "Start with ordinary paper and very light lever force. This micro press is not intended for strength testing.",
-        ],
-        "press_spec": asdict(press),
-        "cartridge_spec": asdict(cartridge),
-        "mechanics_outputs": outputs,
+        "outputs": {
+            "stl": str(stl),
+            "step": str(step),
+        },
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
-    result = dict(outputs)
-    result["micro_manifest"] = str(manifest_path)
-    return result
+    return {
+        "stl": str(stl),
+        "step": str(step),
+        "micro_manifest": str(manifest_path),
+        "solid_pla_mass_upper_bound_g": f"{solid_mass:.2f}",
+    }
