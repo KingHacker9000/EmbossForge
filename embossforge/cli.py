@@ -10,7 +10,7 @@ from . import __version__
 from .artwork import normalize_artwork
 from .calibration import write_calibration_pack
 from .config import DieSpec
-from .mechanics import CartridgeSpec, PressSpec, export_press_pack
+from .mechanics import CartridgeSpec, PressSpec, export_mini_test_pack, export_press_pack
 from .scad_backend import find_openscad, generate_die_pair, render_scad
 
 
@@ -45,6 +45,24 @@ def build_parser() -> argparse.ArgumentParser:
     mechanics.add_argument("--die-diameter", type=float, default=42.0, help="Compatible die diameter in mm")
     mechanics.add_argument("--slide-clearance", type=float, default=0.25, help="Cartridge/receiver per-side clearance in mm")
     mechanics.add_argument("--pivot", type=float, default=6.4, help="Pivot bore diameter in mm")
+
+    mini = sub.add_parser(
+        "mini-test",
+        help="Generate a much smaller low-filament functional throwaway press + die pack",
+    )
+    mini.add_argument("--out", type=Path, default=Path("build") / "mini-test", help="Output directory")
+    mini.add_argument(
+        "--slide-clearance",
+        type=float,
+        default=0.25,
+        help="Cartridge/receiver per-side clearance in mm; deliberately not scaled down",
+    )
+    mini.add_argument(
+        "--paper-thickness",
+        type=float,
+        default=0.10,
+        help="Paper thickness used for the miniature matched die pair in mm",
+    )
     return parser
 
 
@@ -59,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
             return _calibrate(args)
         if args.command == "mechanics":
             return _mechanics(args)
+        if args.command == "mini-test":
+            return _mini_test(args)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -148,6 +168,19 @@ def _mechanics(args: argparse.Namespace) -> int:
 
     print("Generated V0.2 mechanical prototype")
     print(f"  nominal lever ratio: {press.nominal_lever_ratio:.2f}:1")
+    for key, path in outputs.items():
+        print(f"  {key}: {path}")
+    return 0
+
+
+def _mini_test(args: argparse.Namespace) -> int:
+    outputs = export_mini_test_pack(
+        args.out,
+        slide_clearance_mm=args.slide_clearance,
+        paper_thickness_mm=args.paper_thickness,
+    )
+    print("Generated low-filament miniature functional test pack")
+    print("  NOTE: this is for fit/motion/light-emboss validation, not full-strength testing")
     for key, path in outputs.items():
         print(f"  {key}: {path}")
     return 0
