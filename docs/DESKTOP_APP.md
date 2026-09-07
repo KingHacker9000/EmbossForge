@@ -1,136 +1,76 @@
 # EmbossForge desktop app
 
-The desktop app is the primary path for people who only want to turn a design into printable embossing dies.
+The desktop app is the primary path for turning artwork into printable matched embossing dies.
 
-## Downloadable Windows builds
+## Windows builds
 
-Official tagged releases are intended to provide two Windows x64 downloads:
+Tagged releases are designed to provide:
 
-- `EmbossForge-Setup-Windows-x64.exe` — normal installer.
+- `EmbossForge-Setup-Windows-x64.exe` — normal installer;
 - `EmbossForge-Windows-x64-portable.zip` — unzip and run `EmbossForge.exe`.
 
-The official Windows bundle includes the OpenSCAD runtime used to render current STL files, so release users should not need to install Python, CadQuery, or OpenSCAD themselves.
-
-The release workflow is `.github/workflows/release-windows.yml`.
+The Windows bundle includes OpenSCAD, so release users do not need Python, CadQuery, or a separate OpenSCAD install. The release workflow is `.github/workflows/release-windows.yml`.
 
 ## Desktop workflow
 
-1. Launch EmbossForge.
-2. Drop an SVG/PNG/JPG onto the design card, or click the card to browse.
-3. Confirm the preview.
-4. Pick die diameter, paper type, and printer.
-5. Leave advanced settings alone unless you know you need them.
-6. Click **Generate matched die pair**.
-7. Click **Open output folder**.
+1. Launch EmbossForge and choose/drop artwork.
+2. Choose **Simple emboss** or **Variable depth**. Simple emboss remains the default.
+3. For Variable depth choose:
+   - **True height map**, when grayscale was authored as geometry; or
+   - **3D-looking / shaded reference**, when the image includes rendered lighting.
+4. Choose die diameter, paper, and printer profile.
+5. Adjust relief controls only when needed.
+6. Generate and review the pair-fit/validation result.
+7. Open the output folder and import the male/female STLs into the slicer.
 
-Each generated binary design folder contains at least:
+## Variable-depth controls
 
-```text
-<name>_normalized.svg
-<name>_male.scad
-<name>_female.scad
-<name>_male.stl
-<name>_female.stl
-<name>_manifest.json
-```
+Primary controls are intentionally small:
 
-The STL pair is what a normal user imports into a slicer. Source/manifest files are kept so every generated design is inspectable and reproducible.
+- maximum relief;
+- stepped or continuous depth style;
+- number of levels for stepped relief;
+- tone direction / polarity.
 
-## UI philosophy
+Advanced controls include gamma, zero/dead-zone, smoothing, quality/sampling, printer-aware sub-resolution filtering, paper-risk override, base thickness, margin, and clearance.
 
-The UI intentionally exposes only the decisions most users understand:
+## True height maps
 
-- design file
-- die diameter
-- paper type/thickness
-- printer
-- output location
+True height maps go directly into the shared relief backend. By default, white means zero relief and black means maximum relief. Both dies are derived from one canonical sampled height field.
 
-Base thickness, binary relief, margin, clearance, and artwork inversion stay secondary.
+The desktop shows validation near the Generate action. Hard mating/geometry errors block generation. High experimental paper-risk findings can be intentionally accepted, but the UI never describes an unwarned design as guaranteed safe.
 
-The GUI must remain a thin layer over `embossforge.generator.generate_die()`. Geometry rules belong in the shared backend so desktop, CLI, and agent workflows cannot silently diverge.
+## Shaded-reference workflow
 
----
-
-## Planned variable-depth relief UX
-
-Variable-depth grayscale relief is an accepted vNext design, not a current implemented desktop feature. The canonical behavior is specified in [RELIEF_MODE_SPEC.md](RELIEF_MODE_SPEC.md).
-
-The desktop app must add it without turning the UI back into a dense CAD settings panel.
-
-### Emboss style
-
-After artwork is loaded, users should see a simple choice:
+A shaded/rendered image cannot be treated as literal Z because highlights and shadows include illumination. The desktop therefore uses a two-stage flow:
 
 ```text
-Simple emboss      # current binary behavior, default
-Variable depth     # grayscale controls physical relief height
+original shaded image
+        ↓
+deterministic interpretation
+        ↓
+derived machine height map + mask + preview
+        ↓
+matched-pair / paper-risk validation
+        ↓
+user reviews derived preview
+        ↓
+Accept preview & generate STLs
 ```
 
-Binary remains selected by default.
+The converter suppresses broad lighting, isolates the motif, applies printer-aware cleanup, and synthesizes emboss-oriented relief from motif boundaries and stable local structure. This is explicitly an **interpretation for embossing, not reconstruction of true 3D geometry**.
 
-If the artwork contains meaningful grayscale variation, the app may suggest Variable depth, but it must not silently switch modes.
+The derived height map, relief preview, foreground mask, and converter provenance are saved in the design folder and manifest. Changing settings invalidates an accepted preview and causes it to be regenerated before final STL output.
 
-### Default variable-depth controls
+The app may notice substantial continuous shading and recommend the shaded-reference mode, but it does not silently switch source semantics.
 
-Only the primary decisions should be visible:
+## Output and reproducibility
 
-- Maximum relief
-- Depth style: Stepped / Continuous
-- Levels (only for Stepped)
-- Tone direction: Darker = deeper / Lighter = deeper
+Binary jobs preserve normalized SVG + SCAD + STL + manifest. Relief jobs preserve the canonical machine height map and male/female surface maps in addition to SCAD/STL/manifest. Shaded-reference jobs preserve their derived preview/mask/height map too.
 
-A secondary **More relief controls** disclosure may contain:
-
-- gamma
-- background/zero threshold
-- smoothing
-- sampling/quality controls
-- future profile/texture composition controls
-
-### Preview
-
-Variable depth needs more than the existing flat artwork preview.
-
-The first version should provide:
-
-- the original artwork preview;
-- a visual relief/depth preview;
-- a clear legend from zero relief to maximum relief;
-- obvious differentiation between background and shallow embossed areas.
-
-A full interactive 3D viewer is useful later but is not a requirement for the first relief implementation.
-
-### Warnings and intentional override
-
-The desktop app should summarize printability and paper-risk findings close to the Generate action in plain language.
-
-Example:
-
-```text
-2 cautions
-• Fine texture may not resolve with this nozzle.
-• One steep ridge may crease thin paper.
-```
-
-Caution-level findings do not need an extra confirmation.
-
-For high but overrideable paper-risk findings, show a concise confirmation with two clear actions:
-
-```text
-Go back and adjust
-Generate anyway
-```
-
-Do not describe an unwarned design as guaranteed "safe". The planned analysis is heuristic.
-
-Impossible geometry remains a hard error and cannot be overridden from the desktop app.
-
----
+The GUI is intentionally a thin layer over `embossforge.generator.generate_die()`. Geometry and validation rules live in the shared backend so desktop, CLI, CI, and agent workflows cannot silently diverge.
 
 ## Run from source
-
-For contributors:
 
 ```powershell
 py -3.11 -m venv .venv
@@ -145,12 +85,10 @@ or:
 embossforge-gui
 ```
 
-A source checkout still needs OpenSCAD installed to render current STL output. The self-contained release bundle supplies its own copy.
+A source checkout needs OpenSCAD installed for STL rendering. Packaged Windows builds bundle it.
 
-## Release build notes
+## Release validation
 
-The Windows release uses PyInstaller in one-directory mode rather than one-file mode because the bundle includes Qt and an unmodified OpenSCAD runtime. The installer wraps that portable directory using Inno Setup.
+CI constructs the completed desktop window offscreen on Windows. The release workflow additionally tests binary STL output, variable-depth STL output, matched closure validation, shaded-reference conversion tests, PyInstaller packaging, bundled OpenSCAD discovery, portable ZIP creation, and Inno Setup installer creation.
 
-When frozen, `embossforge.scad_backend.find_openscad()` checks `tools/openscad/openscad.exe` next to the application before looking for a system installation.
-
-A future variable-depth relief backend may add packaged runtime components if OpenSCAD is not efficient enough for dense height-map surfaces. Any such change must preserve the no-developer-setup release goal.
+Variable-depth geometry is software/CAD validated but still awaits dedicated physical multi-height emboss calibration before being described as physically validated.
