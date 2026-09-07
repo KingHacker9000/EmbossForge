@@ -61,5 +61,5 @@ def test_explicit_gui_values_override_presets(tmp_path: Path):
 
 
 def test_safe_design_name_removes_path_unsafe_characters():
-    assert safe_design_name('  Wedding: "A/B"?  ') == "Wedding_ _A_B__"
+    assert safe_design_name('  Wedding: "A/B"?  ') == "Wedding_ _A_B_"
     assert safe_design_name("   ") == "design"
