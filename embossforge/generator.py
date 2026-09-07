@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import json
 from pathlib import Path
+import re
 
 from .artwork import normalize_artwork
 from .config import (
@@ -57,16 +59,23 @@ class DieGenerationResult:
         return self.outputs["manifest"]
 
 
+def safe_design_name(value: str) -> str:
+    """Return a cross-platform safe output stem while retaining human readability."""
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", value.strip())
+    name = re.sub(r"\s+", " ", name).strip(" .")
+    if not name:
+        return "design"
+    # Keep Windows path lengths and generated suffixes comfortably manageable.
+    return name[:80].rstrip(" .") or "design"
+
+
 def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
     """Generate one matched die pair from a UI/CLI-neutral request object."""
     artwork = Path(request.artwork)
     if not artwork.exists():
         raise FileNotFoundError(artwork)
 
-    name = request.name or artwork.stem
-    if not name.strip():
-        raise ValueError("Design name cannot be empty")
-
+    name = safe_design_name(request.name or artwork.stem)
     out = Path(request.output_root) / name
     normalized = out / f"{name}_normalized.svg"
     normalize_artwork(
@@ -120,6 +129,15 @@ def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
         spec,
         render_stl=request.render_stl,
     )
+    _write_generation_context(
+        outputs["manifest"],
+        original_artwork=artwork,
+        profile=profile,
+        paper_source=paper_source,
+        clearance_source=clearance_source,
+        threshold=request.threshold,
+        invert=request.invert,
+    )
     return DieGenerationResult(
         name=name,
         output_dir=out,
@@ -130,6 +148,28 @@ def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
         clearance_source=clearance_source,
         outputs=outputs,
     )
+
+
+def _write_generation_context(
+    manifest_path: Path,
+    *,
+    original_artwork: Path,
+    profile: PrinterProfile | None,
+    paper_source: str,
+    clearance_source: str,
+    threshold: int,
+    invert: bool,
+) -> None:
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data["generation_context"] = {
+        "original_artwork": str(original_artwork.resolve()),
+        "printer_profile": profile.name if profile else None,
+        "paper_source": paper_source,
+        "clearance_source": clearance_source,
+        "raster_threshold": threshold,
+        "raster_invert": invert,
+    }
+    manifest_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def default_gui_request(artwork: Path, output_root: Path) -> DieGenerationRequest:
