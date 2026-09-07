@@ -29,7 +29,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[cad,gui,dev]"
-          pip install pyinstaller>=6.12
+          pip install "pyinstaller>=6.12"
 
       - name: Install OpenSCAD and Inno Setup
         shell: pwsh
@@ -41,9 +41,11 @@ jobs:
         shell: pwsh
         run: pytest -q
 
-      - name: Smoke-import desktop app
+      - name: Smoke-test desktop window
         shell: pwsh
-        run: python -c "import embossforge.gui; print('desktop import OK')"
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          python -c "from PySide6.QtWidgets import QApplication; from embossforge.gui import MainWindow; app=QApplication([]); w=MainWindow(); assert w.windowTitle() == 'EmbossForge'; print('desktop window OK')"
 
       - name: Build portable desktop app
         shell: pwsh
@@ -73,9 +75,12 @@ jobs:
           Copy-Item THIRD_PARTY_NOTICES.md "dist\EmbossForge\THIRD_PARTY_NOTICES.md"
           Copy-Item README.md "dist\EmbossForge\README.md"
 
-      - name: Verify bundled OpenSCAD path
+      - name: Verify portable bundle
         shell: pwsh
         run: |
+          if (-not (Test-Path "dist\EmbossForge\EmbossForge.exe")) {
+            throw "Portable bundle is missing EmbossForge.exe"
+          }
           if (-not (Test-Path "dist\EmbossForge\tools\openscad\openscad.exe")) {
             throw "Portable bundle is missing OpenSCAD"
           }
