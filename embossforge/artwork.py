@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
 import re
 import shutil
 import xml.etree.ElementTree as ET
@@ -17,18 +18,16 @@ def normalize_artwork(
     invert: bool = False,
     simplify_fraction: float = 0.0015,
     min_area_px: float = 8.0,
+    physical_artwork_box_mm: float | None = None,
+    min_feature_mm: float | None = None,
+    min_gap_mm: float | None = None,
 ) -> Path:
     """Normalize SVG or raster artwork to a local SVG file.
 
-    Raster input is converted to filled vector contours. SVG input is copied
-    into a canonical coordinate system when needed. In particular, non-zero or
-    negative SVG viewBox origins are translated to a 0,0 viewBox because
-    OpenSCAD's ``import(..., center=true)`` can otherwise offset the imported
-    geometry and cause our circular clipping operation to keep only a sliver of
-    the design.
-
-    Black/dark artwork on a light background is the default. Set
-    ``invert=True`` for light artwork on a dark background.
+    When physical printer limits are supplied for raster artwork, EmbossForge
+    canonicalizes the *shared master mask* before either die is derived. Tiny
+    positive islands/strokes are removed and sub-resolution gaps are closed so
+    the male and female cannot lose different features independently.
     """
     src = Path(source)
     dst = Path(destination_svg)
@@ -50,6 +49,9 @@ def normalize_artwork(
         invert=invert,
         simplify_fraction=simplify_fraction,
         min_area_px=min_area_px,
+        physical_artwork_box_mm=physical_artwork_box_mm,
+        min_feature_mm=min_feature_mm,
+        min_gap_mm=min_gap_mm,
     )
 
 
@@ -82,8 +84,6 @@ def _normalize_svg(src: Path, dst: Path) -> Path:
     try:
         root = ET.fromstring(text)
     except ET.ParseError:
-        # Preserve prior permissive behavior for unusual but OpenSCAD-readable
-        # SVG files. OpenSCAD will provide the useful diagnostic later.
         shutil.copyfile(src, dst)
         return dst
 
@@ -98,26 +98,16 @@ def _normalize_svg(src: Path, dst: Path) -> Path:
         shutil.copyfile(src, dst)
         return dst
 
-    # Keep non-rendering/support nodes at root level and translate only visible
-    # content. This preserves defs/styles while changing the coordinate origin.
     namespace = ""
     if root.tag.startswith("{"):
         namespace = root.tag.split("}", 1)[0] + "}"
     group = ET.Element(
         f"{namespace}g",
-        {
-            "transform": (
-                f"translate({_fmt_svg_number(-min_x)} {_fmt_svg_number(-min_y)})"
-            )
-        },
+        {"transform": f"translate({_fmt_svg_number(-min_x)} {_fmt_svg_number(-min_y)})"},
     )
 
     support_names = {"defs", "style", "metadata", "title", "desc"}
-    visible_children = []
-    for child in list(root):
-        if _local_name(child.tag) not in support_names:
-            visible_children.append(child)
-
+    visible_children = [child for child in list(root) if _local_name(child.tag) not in support_names]
     if not visible_children:
         shutil.copyfile(src, dst)
         return dst
@@ -126,12 +116,8 @@ def _normalize_svg(src: Path, dst: Path) -> Path:
         root.remove(child)
         group.append(child)
     root.append(group)
-    root.set(
-        "viewBox",
-        f"0 0 {_fmt_svg_number(width)} {_fmt_svg_number(height)}",
-    )
+    root.set("viewBox", f"0 0 {_fmt_svg_number(width)} {_fmt_svg_number(height)}")
 
-    # Register the common namespace so ElementTree emits <svg> instead of ns0.
     if namespace == "{http://www.w3.org/2000/svg}":
         ET.register_namespace("", "http://www.w3.org/2000/svg")
     ET.ElementTree(root).write(dst, encoding="utf-8", xml_declaration=True)
@@ -146,6 +132,9 @@ def _raster_to_svg(
     invert: bool,
     simplify_fraction: float,
     min_area_px: float,
+    physical_artwork_box_mm: float | None,
+    min_feature_mm: float | None,
+    min_gap_mm: float | None,
 ) -> Path:
     import cv2
 
@@ -156,6 +145,14 @@ def _raster_to_svg(
     threshold = max(0, min(255, int(threshold)))
     mode = cv2.THRESH_BINARY if invert else cv2.THRESH_BINARY_INV
     _, mask = cv2.threshold(gray, threshold, 255, mode)
+
+    if physical_artwork_box_mm and physical_artwork_box_mm > 0:
+        height, width = gray.shape
+        px_per_mm = max(width, height) / physical_artwork_box_mm
+        if min_feature_mm and min_feature_mm > 0:
+            mask = _morphology_at_physical_width(mask, min_feature_mm * px_per_mm, cv2.MORPH_OPEN)
+        if min_gap_mm and min_gap_mm > 0:
+            mask = _morphology_at_physical_width(mask, min_gap_mm * px_per_mm, cv2.MORPH_CLOSE)
 
     contours, _hierarchy = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     kept: list[list[tuple[float, float]]] = []
@@ -170,10 +167,9 @@ def _raster_to_svg(
             kept.append(points)
 
     if not kept:
-        raise ValueError("No usable foreground shapes were found in the raster artwork")
+        raise ValueError("No usable foreground shapes were found in the raster artwork after printer-aware filtering")
 
     height, width = gray.shape
-    # A single even-odd path preserves nested contours as holes regardless of winding.
     parts: list[str] = []
     for points in kept:
         x0, y0 = points[0]
@@ -191,3 +187,15 @@ def _raster_to_svg(
     )
     dst.write_text(svg, encoding="utf-8")
     return dst
+
+
+def _morphology_at_physical_width(mask, width_px: float, operation: int):
+    import cv2
+
+    diameter = max(1, int(math.ceil(width_px)))
+    if diameter <= 1:
+        return mask
+    if diameter % 2 == 0:
+        diameter += 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (diameter, diameter))
+    return cv2.morphologyEx(mask, operation, kernel)
