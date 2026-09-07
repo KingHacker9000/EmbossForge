@@ -1,43 +1,151 @@
-# EmbossForge agent policy
+# EmbossForge agent guide
 
-EmbossForge is an open-source, parametric paper-embosser system and automatic matched-die generator.
+EmbossForge is an open-source parametric paper-embosser system. It turns artwork into matched male/female 3D-printable dies and also contains a reusable cartridge/press platform.
+
+This file is the canonical guide for Codex, Claude, Copilot, and other coding/3D agents working in this repository.
+
+## What users should experience
+
+Normal users should not need to understand Python, OpenSCAD, CadQuery, or Blender.
+
+Primary user paths:
+
+1. **Desktop app**: drop/select artwork -> choose die/paper/printer settings -> generate files -> open output folder.
+2. **CLI**: `embossforge die ...` and the calibration/mechanics commands.
+3. **Python API**: `embossforge.generator.DieGenerationRequest` + `generate_die()` for integrations/agents.
+
+The desktop app and CLI must use the **same generation backend**. Never duplicate die-generation rules in UI code.
+
+## Repository map
+
+- `embossforge/generator.py` — UI/CLI-neutral matched-die generation service.
+- `embossforge/gui.py` — PySide6 desktop UI only; presentation and request collection belong here.
+- `embossforge/cli.py` — CLI adapter only; avoid putting geometry logic here.
+- `embossforge/artwork.py` — SVG/raster normalization and vectorization.
+- `embossforge/scad_backend.py` — reproducible die relief generation and OpenSCAD invocation.
+- `embossforge/config.py` — die specs, printer profiles, paper presets.
+- `embossforge/mechanics/` — CadQuery cartridge and press source geometry.
+- `blender/` — visual QA/import tooling; not dimensional source of truth.
+- `profiles/` — human-editable printer profiles.
+- `tests/` — regression tests.
+- `docs/PHYSICAL_VALIDATION.md` — real printed validation record. Never infer physical validation from CAD/tests.
+- `packaging/` — desktop release entry points and installer definitions.
+- `.github/workflows/release-windows.yml` — self-contained Windows app/release build.
 
 ## Source of truth
 
 - Mechanical geometry must be generated from source code. Do not hand-edit generated STL/STEP/3MF files.
 - Python + CadQuery are the primary source of truth for precision mechanical parts.
-- OpenSCAD is used where it is the simplest reproducible backend for die relief generation and small calibration artifacts.
-- Blender is for visual inspection, presentation, ergonomic exploration, and complex artistic geometry; it is not the dimensional source of truth for production parts.
+- OpenSCAD is the reproducible backend for artwork relief dies and small calibration artifacts.
+- Blender is for visual inspection, presentation, ergonomic exploration, animation, and complex artistic geometry. It is not the dimensional source of truth for production parts.
+- Generated build outputs are disposable unless explicitly being packaged as release artifacts.
+
+## Design invariants
+
+- Units are millimetres unless explicitly stated otherwise.
+- Male and female dies are a matched pair. Any orientation/clearance change must preserve mating geometry.
+- The female die is intentionally not an exact negative: paper thickness, XY clearance, and extra cavity depth matter.
+- Keyed carriers must remain rotationally deterministic.
+- A shared cartridge-interface change must update all compatible parts and tests.
+- Printer-sensitive clearances stay explicit parameters; never hide them in arbitrary mesh edits.
+- Never treat a scaled miniature as proof of full-size strength.
+- Physical validation must be recorded separately from software/CAD validation.
+
+## Target reference hardware
+
+- FlashForge Adventurer 5M
+- 220 x 220 x 220 mm build volume
+- current validated nozzle: 0.4 mm
+- precision profile may later target 0.25 mm
+- PLA is the current physical-validation material
+
+These are defaults/reference targets, not assumptions that should prevent supporting other printers.
+
+## Required development loop
+
+For normal Python/backend changes:
+
+```text
+python -m compileall -q embossforge
+pytest -q
+```
+
+For die-generation changes, also regenerate a smoke artifact. If OpenSCAD is installed:
+
+```text
+embossforge butterfly-test --out build/smoke-butterfly
+```
+
+For mechanical changes:
+
+```text
+pytest -q
+embossforge mechanics --out build/mechanics
+```
+
+Then inspect generated assembly metadata/collision validation. A visual Blender pass is useful for geometry that cannot be confidently reviewed numerically.
+
+## Desktop UI rules
+
+The desktop app should remain intentionally simple:
+
+- one obvious artwork drop/select surface
+- a preview
+- common settings visible
+- advanced settings secondary/collapsible
+- one primary `Generate die files` action
+- clear success/error state
+- direct `Open output folder` action
+- no CAD vocabulary unless it is genuinely necessary to the user
+
+Do not make users install developer dependencies when using official binary releases. Official Windows bundles should include the OpenSCAD runtime needed for STL generation.
+
+UI work must not change geometry behavior independently of the generator service.
+
+## Release rules
+
+Source installs:
+
+```text
+pip install -e ".[cad,gui,dev]"
+embossforge gui
+```
+
+Official Windows builds are generated by `.github/workflows/release-windows.yml` and should produce:
+
+- `EmbossForge-Windows-x64-portable.zip`
+- `EmbossForge-Setup-Windows-x64.exe`
+
+The portable/installer distribution bundles OpenSCAD under `tools/openscad/`; `find_openscad()` knows how to locate it in frozen builds.
+
+Never commit generated PyInstaller `build/` or `dist/` directories.
 
 ## Agent usage policy
 
-GPT-6 Astra/Codex usage should be conserved. Do not spend Astra time rewriting ordinary Python, documentation, tests, or simple parametric CAD that can be authored directly in the repository.
+Conserve expensive GUI/computer-use/3D-agent runs. Ordinary code, docs, tests, manifests, parametric formulas, and package/release configuration should be edited directly in source.
 
-Use Astra/Codex only when the task genuinely benefits from access to the local PC/GUI/3D environment, for example:
+Use a high-cost 3D/computer-use agent only when the task genuinely needs the user's local graphical environment, for example:
 
-1. Open generated STEP/STL assemblies in Blender/CadQuery/FreeCAD and visually inspect alignment, interference, accessibility, and ergonomics.
-2. Exercise or animate moving assemblies in Blender.
-3. Inspect unusually complex or artistic input geometry that is awkward to diagnose from code/renders alone.
-4. Validate local application integration, slicer behavior, or printer-specific workflows that require the user's installed software.
+- visually inspect generated press assemblies in Blender/FreeCAD
+- test moving mechanisms or ergonomics
+- inspect complex artistic geometry
+- validate slicer behavior or local printer workflow
+- diagnose a problem that cannot be resolved from source geometry/tests/renders
 
-When using Astra/Codex, keep the task narrow. Prefer: inspect -> identify concrete issue -> make minimal source-code correction -> regenerate -> verify.
+When invoking such an agent, keep the task narrow:
 
-## Design rules
+`inspect -> identify concrete issue -> minimal source correction -> regenerate -> verify`
 
-- Target printer: FlashForge Adventurer 5M, 220 x 220 x 220 mm build volume.
-- Default prototype nozzle: 0.4 mm. Precision profile may target 0.25 mm.
-- Default units: millimetres.
-- All fits, relief depths, paper gaps, pivot diameters, cartridge dimensions, and safety margins must be named parameters.
-- A change to a shared cartridge interface must update all compatible parts and tests.
-- Prefer hardware-store fasteners/shafts for pivots over printed pins where practical.
-- Never assume theoretical printer tolerances are sufficient; calibration artifacts are first-class outputs.
+Do not ask an agent to rebuild already-parametric geometry by hand in Blender.
 
-## Required validation
+## Before declaring a task complete
 
-Before considering a mechanical change complete:
+Check the relevant subset of:
 
-1. Run `pytest -q`.
-2. Regenerate affected geometry.
-3. Verify generated solids are valid/non-empty and dimensions match the configured specification.
-4. For mating parts, generate/inspect the assembly or diagnostic cross-section.
-5. Do not commit generated build outputs unless the repository documentation explicitly asks for release artifacts.
+1. `pytest -q` passes.
+2. Generated artifacts are non-empty and dimensionally plausible.
+3. CLI and desktop use the shared generator service.
+4. No generated binaries/STLs were accidentally committed as source.
+5. User-facing changes are reflected in README/docs when needed.
+6. Claims about physical performance are backed by `docs/PHYSICAL_VALIDATION.md`, not by inference.
+7. Release changes preserve a path for non-developer users to run the app without manual Python/OpenSCAD setup.
