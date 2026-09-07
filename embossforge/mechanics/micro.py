@@ -26,14 +26,16 @@ def _cq():
 class MicroTongsSpec:
     """Ultra-light one-piece PLA flexure tongs for the 16 mm butterfly dies.
 
-    The two long arms act as leaf springs. There is no pivot, guide rod,
-    cartridge, roller, or separate hardware. The existing male/female dies load
-    directly into shallow keyed pockets in the opposing jaws.
+    The two long ladder-style arms act as leaf springs. There is no pivot,
+    guide rod, cartridge, roller, screw, or other hardware. Existing male/female
+    dies load directly into shallow keyed pockets in the opposing jaws.
     """
 
     arm_length_mm: float = 72.0
-    arm_width_mm: float = 7.0
     arm_thickness_mm: float = 3.0
+    spring_rail_width_mm: float = 2.0
+    spring_rung_depth_mm: float = 1.8
+    spring_rung_pitch_mm: float = 12.0
     rear_bridge_depth_mm: float = 8.0
     open_jaw_surface_gap_mm: float = 5.2
 
@@ -52,6 +54,10 @@ class MicroTongsSpec:
             raise ValueError("Micro-tongs jaw is too small to leave a useful wall around the die")
         if self.die_pocket_depth_mm >= die.base_thickness_mm:
             raise ValueError("Die pocket must leave part of the die base exposed for removal")
+        if self.spring_rail_width_mm * 2 >= self.jaw_outer_diameter_mm:
+            raise ValueError("Spring rails leave no open truss area")
+        if self.spring_rung_pitch_mm <= self.spring_rung_depth_mm:
+            raise ValueError("Spring rung pitch must exceed rung depth")
         if self.arm_length_mm <= self.jaw_center_from_rear_mm - self.jaw_outer_diameter_mm / 2:
             raise ValueError("Arm is too short to support the jaw")
         if self.open_jaw_surface_gap_mm <= self.required_closed_surface_gap_mm:
@@ -83,7 +89,6 @@ def micro_tongs_spec(*, die_pocket_clearance_mm: float = 0.15) -> MicroTongsSpec
 
 
 def _keyed_pocket(spec: MicroTongsSpec, *, z0: float) -> Any:
-    """Return the direct keyed socket for the existing butterfly die contract."""
     cq = _cq()
     die = micro_butterfly_spec()
     jaw_y = spec.jaw_center_from_rear_mm
@@ -111,12 +116,81 @@ def _keyed_pocket(spec: MicroTongsSpec, *, z0: float) -> Any:
     return circle.union(tab)
 
 
-def build_micro_tongs(spec: MicroTongsSpec | None = None):
-    """Build the one-piece flexure tongs in use orientation.
+def _spring_arm(spec: MicroTongsSpec, *, z0: float):
+    """Build one symmetric ladder spring arm.
 
-    Lower die pocket opens upward. Upper die pocket opens downward with the same
-    +Y key direction, matching the established upper-die 180-degree Y rotation.
+    The two outer rails land on opposite sides of the jaw. Short rungs keep the
+    arm aligned and, after rotating the STL onto its side, act as vertical print
+    supports for the far rail so no long arm is left floating in mid-air.
     """
+    cq = _cq()
+    radius = spec.jaw_outer_diameter_mm / 2
+    rail = spec.spring_rail_width_mm
+    t = spec.arm_thickness_mm
+    y_center = spec.arm_length_mm / 2
+
+    arm = None
+    for sign in (-1, 1):
+        x = sign * (radius - rail / 2)
+        piece = (
+            cq.Workplane("XY")
+            .center(x, y_center)
+            .box(rail, spec.arm_length_mm, t, centered=(True, True, False))
+            .translate((0, 0, z0))
+        )
+        arm = piece if arm is None else arm.union(piece)
+
+    y = spec.rear_bridge_depth_mm + spec.spring_rung_pitch_mm / 2
+    while y < spec.jaw_center_from_rear_mm - radius * 0.55:
+        rung = (
+            cq.Workplane("XY")
+            .center(0, y)
+            .box(
+                spec.jaw_outer_diameter_mm,
+                spec.spring_rung_depth_mm,
+                t,
+                centered=(True, True, False),
+            )
+            .translate((0, 0, z0))
+        )
+        arm = arm.union(rung)
+        y += spec.spring_rung_pitch_mm
+    return arm
+
+
+def _rear_flexure(spec: MicroTongsSpec):
+    """Build the hardware-free rear connection between the two spring arms."""
+    cq = _cq()
+    radius = spec.jaw_outer_diameter_mm / 2
+    rail = spec.spring_rail_width_mm
+    total_h = spec.total_stack_height_mm
+
+    flex = None
+    for sign in (-1, 1):
+        x = sign * (radius - rail / 2)
+        column = (
+            cq.Workplane("XY")
+            .center(x, spec.rear_bridge_depth_mm / 2)
+            .box(rail, spec.rear_bridge_depth_mm, total_h, centered=(True, True, False))
+        )
+        flex = column if flex is None else flex.union(column)
+
+    # One thin rear web prevents the two side springs from racking/twisting.
+    web = (
+        cq.Workplane("XY")
+        .center(0, spec.spring_rung_depth_mm / 2)
+        .box(
+            spec.jaw_outer_diameter_mm,
+            spec.spring_rung_depth_mm,
+            total_h,
+            centered=(True, True, False),
+        )
+    )
+    return flex.union(web)
+
+
+def build_micro_tongs(spec: MicroTongsSpec | None = None):
+    """Build the one-piece flexure tongs in use orientation."""
     spec = spec or micro_tongs_spec()
     spec.validate()
     cq = _cq()
@@ -124,27 +198,10 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
     t = spec.arm_thickness_mm
     upper_z = t + spec.open_jaw_surface_gap_mm
     jaw_y = spec.jaw_center_from_rear_mm
-    arm_center_y = spec.arm_length_mm / 2
 
-    lower_arm = (
-        cq.Workplane("XY")
-        .center(0, arm_center_y)
-        .box(spec.arm_width_mm, spec.arm_length_mm, t, centered=(True, True, False))
-    )
-    upper_arm = lower_arm.translate((0, 0, upper_z))
-
-    # Solid rear bridge. Flexure comes from the long, slender PLA arms rather
-    # than a fragile sub-millimetre living hinge.
-    bridge = (
-        cq.Workplane("XY")
-        .center(0, spec.rear_bridge_depth_mm / 2)
-        .box(
-            spec.arm_width_mm,
-            spec.rear_bridge_depth_mm,
-            spec.total_stack_height_mm,
-            centered=(True, True, False),
-        )
-    )
+    lower_arm = _spring_arm(spec, z0=0.0)
+    upper_arm = _spring_arm(spec, z0=upper_z)
+    bridge = _rear_flexure(spec)
 
     lower_jaw = (
         cq.Workplane("XY")
@@ -155,14 +212,9 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
     upper_jaw = lower_jaw.translate((0, 0, upper_z))
 
     body = lower_arm.union(upper_arm).union(bridge).union(lower_jaw).union(upper_jaw)
-
-    # Lower pocket opens from the upper face of the lower jaw.
     body = body.cut(_keyed_pocket(spec, z0=t - spec.die_pocket_depth_mm))
-
-    # Upper pocket opens from the lower face of the upper jaw.
     body = body.cut(_keyed_pocket(spec, z0=upper_z))
 
-    # Opposing fingernail/removal scallops let the existing dies be popped out.
     notch_y = jaw_y + spec.jaw_outer_diameter_mm / 2
     lower_notch = (
         cq.Workplane("XY")
@@ -182,7 +234,7 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
 
 
 def build_micro_tongs_print_orientation(spec: MicroTongsSpec | None = None):
-    """Rotate onto one side so both spring arms are supported by the bed."""
+    """Rotate onto a trussed side that is intentionally printable without large supports."""
     spec = spec or micro_tongs_spec()
     part = build_micro_tongs(spec)
     return part.rotate((0, 0, 0), (0, 1, 0), 90).translate(
@@ -202,8 +254,8 @@ def export_micro_press_pack(
 ) -> dict[str, str]:
     """Export the ultra-light one-piece butterfly flexure tongs.
 
-    ``slide_clearance_mm`` is accepted for backward CLI compatibility but is no
-    longer used: this design has no cartridges or sliding receivers.
+    ``slide_clearance_mm`` remains accepted only so commands copied from the
+    discarded cartridge-based prototype do not break. It has no effect here.
     """
     del slide_clearance_mm
     out = Path(out_dir)
@@ -223,7 +275,7 @@ def export_micro_press_pack(
         "mode": "micro-butterfly-flexure-tongs",
         "purpose": (
             "Ultra-low-material hand embosser for the already-printed 16 mm butterfly-test pair. "
-            "The two PLA arms flex like tongs; there is no pivot, guide rod, cartridge, roller, or other hardware."
+            "The PLA ladder arms flex like tongs; there is no pivot, guide rod, cartridge, roller, screw, or other hardware."
         ),
         "physical_status": "unvalidated prototype / light hand force only",
         "compatible_die_command": "embossforge butterfly-test",
@@ -242,7 +294,7 @@ def export_micro_press_pack(
             "solid_pla_mass_upper_bound_g": round(solid_mass, 2),
         },
         "print": {
-            "stl_orientation": "pre-rotated onto its side so both spring arms are supported",
+            "stl_orientation": "pre-rotated onto trussed side; one outer rail is on the bed and rungs support the opposite rail",
             "recommended_layer_height_mm": 0.20,
             "recommended_walls": 3,
             "recommended_infill_percent": 10,
