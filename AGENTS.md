@@ -1,296 +1,197 @@
 # EmbossForge agent guide
 
-EmbossForge is an open-source parametric paper-embosser system. It turns artwork into matched male/female 3D-printable dies and also contains a reusable cartridge/press platform.
+EmbossForge is an open-source parametric paper-embosser system. It turns artwork into matched male/female 3D-printable dies and contains a reusable cartridge/press platform.
 
-This file is the canonical guide for Codex, Claude, Copilot, and other coding/3D agents working in this repository.
+This is the canonical guide for coding and 3D agents working in the repository.
 
-## What users should experience
+## User paths
 
-Normal users should not need to understand Python, OpenSCAD, CadQuery, or Blender.
+1. Desktop: artwork → source/emboss style → paper/printer → validation → matched files.
+2. CLI: `embossforge die ...` plus calibration/mechanics commands.
+3. Python: `DieGenerationRequest` + `generate_die()`.
 
-Primary user paths:
-
-1. **Desktop app**: drop/select artwork -> choose die/paper/printer settings -> generate files -> open output folder.
-2. **CLI**: `embossforge die ...` and the calibration/mechanics commands.
-3. **Python API**: `embossforge.generator.DieGenerationRequest` + `generate_die()` for integrations/agents.
-
-The desktop app and CLI must use the **same generation backend**. Never duplicate die-generation rules in UI code.
+Desktop, CLI, CI, and agents must use the **same generation backend**. Never duplicate geometry rules in UI code.
 
 ## Repository map
 
-- `embossforge/generator.py` — UI/CLI-neutral matched-die generation service.
-- `embossforge/gui.py` — PySide6 desktop UI only; presentation and request collection belong here.
-- `embossforge/cli.py` — CLI adapter only; avoid putting geometry logic here.
-- `embossforge/artwork.py` — SVG/raster normalization and vectorization.
-- `embossforge/scad_backend.py` — reproducible binary die relief generation and OpenSCAD invocation.
+- `embossforge/generator.py` — shared matched-die orchestration.
+- `embossforge/gui.py` — base polished PySide6 UI.
+- `embossforge/gui_vnext.py` — official 0.2 desktop flow, including shaded-reference preview acceptance.
+- `embossforge/cli.py` — CLI adapter.
+- `embossforge/artwork.py` — binary SVG/raster normalization.
+- `embossforge/heightmap.py` — canonical raster relief field and female surface derivation.
+- `embossforge/shaded_reference.py` — deterministic shaded-reference interpretation.
+- `embossforge/relief.py` — relief/source enums, specs, and validation types.
+- `embossforge/relief_backend.py` — variable-height OpenSCAD/PNG surface generation.
+- `embossforge/mating.py` — printer-aware pair preflight and exported-STL closure verification.
+- `embossforge/validation.py` — height-field accommodation and experimental paper-risk heuristics.
+- `embossforge/scad_backend.py` — binary geometry and OpenSCAD execution.
 - `embossforge/config.py` — die specs, printer profiles, paper presets.
-- `embossforge/mechanics/` — CadQuery cartridge and press source geometry.
-- `blender/` — visual QA/import tooling; not dimensional source of truth.
-- `profiles/` — human-editable printer profiles.
+- `embossforge/mechanics/` — CadQuery cartridge/press geometry.
+- `blender/` — visual QA only; not dimensional source of truth.
+- `profiles/` — printer profiles.
 - `tests/` — regression tests.
-- `docs/RELIEF_MODE_SPEC.md` — canonical accepted contract for planned grayscale/variable-depth relief work.
-- `docs/IMAGE_INPUT_SPEC.md` — canonical source-interpretation contract for flat artwork, true height maps, and shaded/3D-looking references.
-- `docs/MATING_VALIDATION_SPEC.md` — canonical cross-cutting contract for printer-aware positive/negative feature preservation and predicted die closure.
-- `skills/embossforge-design/SKILL.md` — design skill for agents creating manufacturable EmbossForge artwork/height maps.
-- `docs/PHYSICAL_VALIDATION.md` — real printed validation record. Never infer physical validation from CAD/tests.
-- `packaging/` — desktop release entry points and installer definitions.
-- `.github/workflows/release-windows.yml` — self-contained Windows app/release build.
+- `docs/RELIEF_MODE_SPEC.md` — implemented relief contract.
+- `docs/IMAGE_INPUT_SPEC.md` — implemented source-interpretation contract.
+- `docs/MATING_VALIDATION_SPEC.md` — printer-aware matched-pair contract.
+- `skills/embossforge-design/SKILL.md` — artwork/height-map design rules for agents.
+- `docs/PHYSICAL_VALIDATION.md` — actual printed validation. Never infer physical validation from CAD/tests.
+- `packaging/` and `.github/workflows/release-windows.yml` — Windows desktop packaging.
 
 ## Source of truth
 
-- Mechanical geometry must be generated from source code. Do not hand-edit generated STL/STEP/3MF files.
-- Python + CadQuery are the primary source of truth for precision mechanical parts.
-- OpenSCAD is the reproducible backend for current **binary** artwork relief dies and small calibration artifacts.
-- A future variable-depth relief backend may use a deterministic height-map/mesh path when that is more appropriate than OpenSCAD. User-facing behavior must still be driven by shared typed request/config objects and recorded in the manifest.
-- Blender is for visual inspection, presentation, ergonomic exploration, animation, and complex artistic geometry. It is not the dimensional source of truth for production parts.
-- Generated build outputs are disposable unless explicitly being packaged as release artifacts.
+- Mechanical dimensions come from Python/CadQuery source.
+- Binary artwork geometry comes from the shared Python/OpenSCAD path.
+- Variable-depth geometry comes from the explicit canonical raster height field + OpenSCAD surface backend.
+- Shaded references must first become an explicit derived height map; raw lighting is not dimensional source data.
+- Blender is inspection/presentation, not production geometry authority.
+- Generated STL/STEP/build outputs are disposable unless deliberately packaged as release artifacts.
 
-## Design invariants
+## Matched-pair invariants
 
-- Units are millimetres unless explicitly stated otherwise.
-- Male and female dies are a matched pair. Any orientation/clearance change must preserve mating geometry.
-- The female die is intentionally not an exact negative: paper thickness, XY clearance, and extra cavity depth matter.
-- **Ideal CAD pairing is insufficient.** A valid pair must also remain compatible after printer/nozzle-aware canonicalization; read `docs/MATING_VALIDATION_SPEC.md`.
-- Never independently simplify/filter male and female artwork. Build one printer-aware canonical target, then derive both sides from it.
-- A retained positive feature may not survive if its matching negative groove is below the selected profile's printable-gap limit. Such one-sided feature loss is a compatibility failure.
-- Predicted die-to-die interference at nominal closure is a hard error, not an `allow-risky` warning.
-- Keyed carriers must remain rotationally deterministic.
-- A shared cartridge-interface change must update all compatible parts and tests.
-- Printer-sensitive clearances stay explicit parameters; never hide them in arbitrary mesh edits.
-- Never treat a scaled miniature as proof of full-size strength.
-- Physical validation must be recorded separately from software/CAD validation.
+- Units are millimetres unless stated otherwise.
+- Male and female are a coordinated pair; never simplify/filter them independently.
+- The female includes paper thickness, XY clearance, and extra cavity depth.
+- Build one printer-aware canonical target, then derive both halves from it.
+- A positive feature surviving while its matching negative disappears is a compatibility failure.
+- Predicted nominal die-to-die interference is a hard error and can never be bypassed by `allow_risky`.
+- Upper/lower orientation and mirror transforms must remain deterministic.
+- Printer-sensitive clearances stay explicit and profile-driven.
+- Physical validation is separate from software/CAD validation.
 
-## Variable-depth relief contract
+## Relief contract
 
-Before implementing grayscale/height-map relief, read **`docs/RELIEF_MODE_SPEC.md` in full**. It is the canonical architecture contract until explicitly superseded.
+Binary remains the default. Relief is explicit and additive.
 
-Critical invariants:
-
-- Binary mode remains the default and existing binary commands/API calls must keep their behavior.
-- Relief mode is opt-in; grayscale detection may suggest it but must never silently enable it.
-- Grayscale semantics, gamma, stepping, polarity, and all paper/printer accommodations belong in shared backend data models, not UI code.
-- CLI, GUI, and Python API must build the same relief request/specification and call the same generator.
-- The female relief field must derive from the same male source field plus explicit clearance/paper/depth accommodations and the established cartridge orientation transform.
-- Relief-mode geometry must also satisfy `docs/MATING_VALIDATION_SPEC.md` at every relevant height/cross-section; a cavity that disappears at printer resolution while the opposing ridge remains is invalid.
-- Paper-risk analysis is heuristic and warning-oriented. `caution`/`high` paper-risk findings are overrideable; impossible geometry is not.
-- A user override must be explicit and recorded in the generated manifest.
-- Missing manifest `schema_version` means v1. New relief work may introduce schema v2 only by preserving existing top-level manifest fields documented in the relief spec.
-- Do not claim grayscale relief is physically validated until an actual printed relief test is recorded in `docs/PHYSICAL_VALIDATION.md`.
-- Do not couple relief-mode implementation to radial rings/textures. The architecture should allow those layers later, but direct grayscale-to-height functionality lands first.
-
-If implementation choices conflict with the spec, update the spec intentionally in the same change and explain the compatibility impact. Do not silently diverge.
-
-## Raster/source interpretation contract
-
-Before adding automatic PNG/JPG interpretation, read **`docs/IMAGE_INPUT_SPEC.md`**.
-
-Geometry mode and source interpretation are separate concepts.
-
-Geometry modes:
+Valid source combinations:
 
 ```text
-binary
-relief
+binary + flat-artwork
+relief + height-map
+relief + shaded-reference
 ```
 
-Source interpretations:
+Critical rules:
 
-```text
-flat-artwork
-height-map
-shaded-reference
-```
+- true height maps use authored grayscale as geometry;
+- shaded references use `deterministic-shaded-reference-v1`, not naïve brightness→Z;
+- the converter writes an inspectable derived height map, preview, and foreground mask;
+- shaded-reference output must never be described as recovered true 3D depth;
+- desktop shaded references require preview acceptance before final STL rendering;
+- gamma, stepping, polarity, smoothing, sampling, paper/profile accommodation, and validation belong in shared backend data models;
+- female relief derives from the exact canonical male field plus explicit accommodations;
+- hard geometry/closure failures are non-overrideable;
+- high experimental paper-risk findings may be intentionally overridden and must be recorded in the manifest;
+- no warning is proof of paper safety;
+- variable-depth geometry must not be claimed physically validated until a real multi-height print is recorded in `docs/PHYSICAL_VALIDATION.md`.
 
-Critical invariants:
+Read `docs/RELIEF_MODE_SPEC.md`, `docs/IMAGE_INPUT_SPEC.md`, and `docs/MATING_VALIDATION_SPEC.md` before changing these paths.
 
-- A metallic/shaded/3D-looking render is **not** automatically a height map.
-- Do not map highlights, cast shadows, specular reflections, or ambient-occlusion shading directly to Z unless the user explicitly chooses literal height-map interpretation.
-- Image detection may recommend an interpretation but must never silently change geometry semantics.
-- `shaded-reference` conversion means synthesizing a manufacturable derived height map, not claiming to reconstruct true 3D depth from one image.
-- Derived height maps must be preserved as inspectable output/provenance.
-- A user-authored true height map must not be silently flattened through shaded-reference conversion.
-- UI, CLI, and Python API must share the same source-interpretation enum and backend.
+## Artwork-generation policy
 
-For ornate AI-generated medallion artwork, prefer an explicit machine height map over trying to use the pretty rendered image directly.
-
-## Artwork-generation skill for agents
-
-When an agent is asked to **create, redesign, simplify, or convert artwork for EmbossForge**, read:
+When creating/redesigning/simplifying EmbossForge artwork, read:
 
 ```text
 skills/embossforge-design/SKILL.md
 ```
 
-The core rule is:
-
-> Generate machine geometry artwork separately from presentation artwork.
-
-For variable-depth designs, the preferred output pair is:
+Prefer separate machine and presentation artifacts:
 
 ```text
-<name>_heightmap.png   # machine input: unlit, orthographic grayscale
-<name>_preview.png     # optional attractive visualization
+<name>_heightmap.png   # unlit machine geometry
+<name>_preview.png     # optional attractive render
 ```
 
-Do not provide a metallic/shaded preview as the only file and label it a height map.
+Do not label a metallic/shaded preview as a true height map.
 
-The skill defines:
-
-- physical-scale feature guidance;
-- current AD5M / 0.4 mm profile minima;
-- white-zero / dark-high height-map convention;
-- circular composition guidance;
-- butterfly/floral/monogram hierarchy;
-- relief-level design guidance;
-- text/monogram rules;
-- paper-friendly geometry heuristics;
-- paired positive/negative manufacturability guidance;
-- shaded-reference conversion rules;
-- a reusable image-generation prompt template.
-
-## Target reference hardware
+## Reference hardware
 
 - FlashForge Adventurer 5M
-- 220 x 220 x 220 mm build volume
-- current validated nozzle: 0.4 mm
-- precision profile may later target 0.25 mm
-- PLA is the current physical-validation material
+- 220 × 220 × 220 mm
+- current physically validated nozzle: 0.4 mm
+- PLA used in the recorded binary physical validation
 
-These are defaults/reference targets, not assumptions that should prevent supporting other printers.
+These are reference defaults, not restrictions on other printers.
 
-## Required development loop
+## Development loop
 
-For normal Python/backend changes:
+Normal backend changes:
 
 ```text
 python -m compileall -q embossforge
 pytest -q
 ```
 
-For die-generation changes, also regenerate a smoke artifact. If OpenSCAD is installed:
+Die changes should also render a smoke artifact when OpenSCAD is available. CI already includes binary and real variable-depth STL smoke paths plus closure checks.
 
-```text
-embossforge butterfly-test --out build/smoke-butterfly
-```
-
-For mechanical changes:
+Mechanical changes:
 
 ```text
 pytest -q
 embossforge mechanics --out build/mechanics
 ```
 
-Then inspect generated assembly metadata/collision validation. A visual Blender pass is useful for geometry that cannot be confidently reviewed numerically.
+Source-interpretation changes should cover at least flat raster, true height map, shaded reference, ornate/detail-dense input, and explicit-choice behavior.
 
-For future relief-mode changes, additionally satisfy the testing contract in `docs/RELIEF_MODE_SPEC.md`, including binary backward-compatibility, tone mapping, male/female pairing, risk-report behavior, and manifest schema coverage.
+Matched-die changes should cover thin positives, matching negative gaps, tiny counters, close ridges, orientation/mirror mismatch, profile/nozzle variation, and proof that `allow_risky` cannot bypass mating incompatibility.
 
-For source-interpretation changes, test at minimum:
+## Desktop rules
 
-- a near-binary PNG;
-- a true authored height map;
-- a shaded metallic/bas-relief reference;
-- a white-background ornate design with high detail density;
-- behavior when detection disagrees with an explicit user choice.
+Keep the app guided rather than CAD-like:
 
-For matched-die geometry changes, also satisfy `docs/MATING_VALIDATION_SPEC.md`, including at minimum:
+- one obvious artwork surface;
+- Simple emboss default;
+- explicit Variable depth mode;
+- explicit True height map vs 3D-looking/shaded reference choice;
+- common controls visible, advanced controls secondary;
+- plain-language validation near Generate;
+- derived shaded-reference preview before final STL generation;
+- no silent semantic switching;
+- direct output-folder access.
 
-- a thin positive line whose matching negative groove would otherwise disappear;
-- consistent paired widening/removal;
-- tiny text counters;
-- close parallel ridges / merged negative cavities;
-- orientation/mirror mismatch;
-- selected nozzle/profile changing whether a feature is valid;
-- `allow-risky` proving unable to bypass mating incompatibility.
-
-## Desktop UI rules
-
-The desktop app should remain intentionally simple:
-
-- one obvious artwork drop/select surface;
-- a preview;
-- common settings visible;
-- advanced settings secondary/collapsible;
-- one primary `Generate matched die pair` action;
-- clear success/error state;
-- direct `Open output folder` action;
-- no CAD vocabulary unless it is genuinely necessary to the user.
-
-For future variable-depth relief:
-
-- keep **Simple emboss** as the default;
-- expose **Variable depth** as an explicit emboss-style choice;
-- show only maximum relief, depth style, levels, and tone direction by default;
-- keep gamma/threshold/sampling controls behind a secondary disclosure;
-- summarize warnings in plain language near Generate;
-- do not call a design "safe" merely because no heuristic warning fired.
-
-For ambiguous shaded uploads, prefer a small interpretation card rather than another dense settings panel:
-
-```text
-Simple artwork
-Convert 3D-looking artwork to relief
-Treat grayscale as exact height
-```
-
-If the app thinks the image is shaded, explain why literal grayscale can be misleading. Recommendation is advisory; the user chooses.
-
-For fit validation, surface a specific **Die fit check** result rather than hiding incompatible geometry behind a generic detail warning. If a male feature would survive while its female cavity would disappear at the selected nozzle/profile, generation must stop or repair the pair consistently.
-
-Do not make users install developer dependencies when using official binary releases. Official Windows bundles should include the OpenSCAD runtime needed for current STL generation.
-
-UI work must not change geometry behavior independently of the generator service.
+Official desktop entrypoints are `embossforge.gui_vnext:main` and `packaging/desktop_entry.py`.
 
 ## Release rules
 
-Source installs:
+Source:
 
 ```text
 pip install -e ".[cad,gui,dev]"
 embossforge gui
 ```
 
-Official Windows builds are generated by `.github/workflows/release-windows.yml` and should produce:
+Windows release workflow should produce:
 
-- `EmbossForge-Windows-x64-portable.zip`
-- `EmbossForge-Setup-Windows-x64.exe`
+```text
+EmbossForge-Windows-x64-portable.zip
+EmbossForge-Setup-Windows-x64.exe
+```
 
-The portable/installer distribution bundles OpenSCAD under `tools/openscad/`; `find_openscad()` knows how to locate it in frozen builds.
+The bundle carries OpenSCAD under `tools/openscad/`. Do not commit PyInstaller `build/` or `dist/` output.
 
-Never commit generated PyInstaller `build/` or `dist/` directories.
+## Expensive-agent policy
 
-## Agent usage policy
+Use local GUI/3D agents only when a task genuinely needs the user's graphical environment: assembly visual inspection, slicer behavior, moving-mechanism/ergonomic QA, or complex artistic geometry. Ordinary source, tests, docs, manifests, formulas, and packaging should be handled directly.
 
-Conserve expensive GUI/computer-use/3D-agent runs. Ordinary code, docs, tests, manifests, parametric formulas, and package/release configuration should be edited directly in source.
+A high-cost visual pass should stay narrow:
 
-Use a high-cost 3D/computer-use agent only when the task genuinely needs the user's local graphical environment, for example:
+```text
+inspect → concrete issue → minimal source correction → regenerate → verify
+```
 
-- visually inspect generated press assemblies in Blender/FreeCAD;
-- test moving mechanisms or ergonomics;
-- inspect complex artistic geometry;
-- validate slicer behavior or local printer workflow;
-- diagnose a problem that cannot be resolved from source geometry/tests/renders.
+Do not rebuild already-parametric geometry by hand in Blender.
 
-Image-generation agents may be valuable for **authoring machine height maps**, but they must follow `skills/embossforge-design/SKILL.md`. A pretty render is not dimensional source data.
+## Before declaring work complete
 
-When invoking a high-cost local 3D agent, keep the task narrow:
-
-`inspect -> identify concrete issue -> minimal source correction -> regenerate -> verify`
-
-Do not ask an agent to rebuild already-parametric geometry by hand in Blender.
-
-## Before declaring a task complete
-
-Check the relevant subset of:
+Check the relevant subset:
 
 1. `pytest -q` passes.
-2. Generated artifacts are non-empty and dimensionally plausible.
-3. CLI and desktop use the shared generator service.
-4. No generated binaries/STLs were accidentally committed as source.
-5. User-facing changes are reflected in README/docs when needed.
-6. Claims about physical performance are backed by `docs/PHYSICAL_VALIDATION.md`, not by inference.
-7. Release changes preserve a path for non-developer users to run the app without manual Python/OpenSCAD setup.
-8. Relief-mode work preserves binary behavior and follows `docs/RELIEF_MODE_SPEC.md`.
-9. Risk warnings and overrides are recorded in manifests; impossible geometry is never bypassed by `allow-risky` behavior.
-10. Raster/source interpretation follows `docs/IMAGE_INPUT_SPEC.md` and never silently confuses a shaded render with a true height map.
-11. Artwork-generating agents follow `skills/embossforge-design/SKILL.md` and separate machine maps from preview renders.
-12. Any generated die pair passes printer-aware mating/closure validation according to `docs/MATING_VALIDATION_SPEC.md`; ideal CAD overlap checks alone are insufficient.
+2. Binary and relief smoke artifacts are non-empty and plausible.
+3. Rendered pairs pass printer-aware/height-field/exported-STL closure validation.
+4. CLI and desktop call the shared generator.
+5. No generated binaries were accidentally committed as source.
+6. README/docs reflect user-facing behavior.
+7. Windows packaging still gives non-developer users a self-contained path.
+8. Risk override never bypasses invalid mating/geometry.
+9. Shaded references and true height maps are never silently confused.
+10. Physical claims are backed only by `docs/PHYSICAL_VALIDATION.md`.
