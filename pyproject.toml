@@ -38,7 +38,7 @@ release = [
 ]
 
 [project.scripts]
-embossforge = "embossforge.cli:main"
+embossforge = "embossforge.cli_vnext:main"
 
 [project.gui-scripts]
 embossforge-gui = "embossforge.gui_vnext:main"
