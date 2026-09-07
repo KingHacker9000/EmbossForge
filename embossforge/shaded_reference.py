@@ -87,6 +87,12 @@ def convert_shaded_reference(
     gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
 
     mask, background_method = _foreground_mask(canvas, gray, alpha_canvas)
+    # A bright specular stripe can locally match a white background even though
+    # it lies inside a coherent medallion/petal/wing. For opaque shaded renders,
+    # fill enclosed segmentation holes before physical-resolution cleanup. Alpha
+    # inputs are left literal because transparent holes are usually intentional.
+    if background_method != "alpha":
+        mask = _fill_enclosed_holes(mask)
     mask = _printer_aware_mask_cleanup(mask, mm_per_sample, profile)
     foreground_fraction = float(np.mean(mask > 0))
     if foreground_fraction < 0.002:
@@ -237,6 +243,31 @@ def _foreground_mask(
     else:
         _, fallback = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return fallback, "border-luminance-otsu"
+
+
+def _fill_enclosed_holes(mask: np.ndarray) -> np.ndarray:
+    """Fill only background regions that cannot reach the image border."""
+    foreground = (mask > 0).astype(np.uint8)
+    inverse = (1 - foreground).astype(np.uint8)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(inverse, connectivity=8)
+    if count <= 1:
+        return mask
+
+    height, width = mask.shape
+    exterior_labels: set[int] = set()
+    exterior_labels.update(int(v) for v in labels[0, :])
+    exterior_labels.update(int(v) for v in labels[-1, :])
+    exterior_labels.update(int(v) for v in labels[:, 0])
+    exterior_labels.update(int(v) for v in labels[:, -1])
+
+    filled = foreground.copy()
+    max_hole_area = int(height * width * 0.45)
+    for label in range(1, count):
+        if label in exterior_labels:
+            continue
+        if int(stats[label, cv2.CC_STAT_AREA]) <= max_hole_area:
+            filled[labels == label] = 1
+    return filled.astype(np.uint8) * 255
 
 
 def _printer_aware_mask_cleanup(
