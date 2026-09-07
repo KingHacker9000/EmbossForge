@@ -11,6 +11,16 @@ The project is currently pre-1.0. Interfaces, dimensions, and generated geometry
 - automatic matched male/female die generation from SVG and raster artwork
 - keyed die-carrier orientation
 - FlashForge Adventurer 5M prototype profile
+- paper presets and printer-profile validation in the generation flow
+- shared `embossforge.generator` service used by CLI and desktop UI
+- minimalist PySide6 desktop app with drag/drop artwork, preview, common settings, advanced settings, generation status, and output-folder access
+- `embossforge gui` and `embossforge-gui` launch paths
+- self-contained Windows packaging workflow using PyInstaller
+- portable Windows ZIP layout with bundled OpenSCAD runtime
+- Inno Setup Windows installer definition
+- expanded `AGENTS.md` repository/validation/release guide for LLM coding and 3D agents
+- desktop-app documentation and third-party notices
+- continuous Windows GUI smoke coverage
 - printer/emboss calibration artifacts
 - parametric CadQuery press, cartridges, receivers, and assembly metadata
 - open/closed printed-part collision checks
@@ -25,6 +35,7 @@ The project is currently pre-1.0. Interfaces, dimensions, and generated geometry
 
 - SVG normalization for non-zero/negative `viewBox` origins that could shift imported artwork and leave only a clipped sliver
 - butterfly smoke-test geometry now uses deterministic OpenSCAD primitives instead of depending on SVG import placement
+- packaged builds can discover the bundled `tools/openscad/openscad.exe` runtime before looking for a system install
 
 ### Physically validated
 
