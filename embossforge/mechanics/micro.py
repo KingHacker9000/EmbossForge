@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
-import math
 from pathlib import Path
 from typing import Any
 
@@ -123,10 +122,8 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
     cq = _cq()
 
     t = spec.arm_thickness_mm
-    gap = spec.open_jaw_surface_gap_mm
-    upper_z = t + gap
+    upper_z = t + spec.open_jaw_surface_gap_mm
     jaw_y = spec.jaw_center_from_rear_mm
-    rear_y = 0.0
     arm_center_y = spec.arm_length_mm / 2
 
     lower_arm = (
@@ -140,7 +137,7 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
     # than a fragile sub-millimetre living hinge.
     bridge = (
         cq.Workplane("XY")
-        .center(0, rear_y + spec.rear_bridge_depth_mm / 2)
+        .center(0, spec.rear_bridge_depth_mm / 2)
         .box(
             spec.arm_width_mm,
             spec.rear_bridge_depth_mm,
@@ -160,15 +157,12 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
     body = lower_arm.union(upper_arm).union(bridge).union(lower_jaw).union(upper_jaw)
 
     # Lower pocket opens from the upper face of the lower jaw.
-    lower_pocket = _keyed_pocket(spec, z0=t - spec.die_pocket_depth_mm)
-    body = body.cut(lower_pocket)
+    body = body.cut(_keyed_pocket(spec, z0=t - spec.die_pocket_depth_mm))
 
     # Upper pocket opens from the lower face of the upper jaw.
-    upper_pocket = _keyed_pocket(spec, z0=upper_z)
-    body = body.cut(upper_pocket)
+    body = body.cut(_keyed_pocket(spec, z0=upper_z))
 
-    # Small opposing fingernail/removal scallops at the front edges of both
-    # sockets so the already-printed dies can be popped back out.
+    # Opposing fingernail/removal scallops let the existing dies be popped out.
     notch_y = jaw_y + spec.jaw_outer_diameter_mm / 2
     lower_notch = (
         cq.Workplane("XY")
@@ -188,18 +182,16 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
 
 
 def build_micro_tongs_print_orientation(spec: MicroTongsSpec | None = None):
-    """Rotate onto the side so both spring arms are supported by the bed.
-
-    The die recesses are only shallow sideways pockets in this orientation;
-    they should not require a forest of support material.
-    """
+    """Rotate onto one side so both spring arms are supported by the bed."""
+    spec = spec or micro_tongs_spec()
     part = build_micro_tongs(spec)
-    return part.rotate((0, 0, 0), (0, 1, 0), 90)
+    return part.rotate((0, 0, 0), (0, 1, 0), 90).translate(
+        (0, 0, spec.jaw_outer_diameter_mm / 2)
+    )
 
 
 def _solid_mass_g(part: Any) -> float:
-    volume_mm3 = float(part.val().Volume())
-    return volume_mm3 / 1000.0 * PLA_DENSITY_G_CM3
+    return float(part.val().Volume()) / 1000.0 * PLA_DENSITY_G_CM3
 
 
 def export_micro_press_pack(
@@ -211,7 +203,7 @@ def export_micro_press_pack(
     """Export the ultra-light one-piece butterfly flexure tongs.
 
     ``slide_clearance_mm`` is accepted for backward CLI compatibility but is no
-    longer used: there are no cartridges or sliding receivers in this design.
+    longer used: this design has no cartridges or sliding receivers.
     """
     del slide_clearance_mm
     out = Path(out_dir)
@@ -264,10 +256,7 @@ def export_micro_press_pack(
             "Stop once the emboss forms. Do not fold the arms flat together or repeatedly over-flex PLA.",
             "Use the front scallops to remove the dies with a fingernail or thin plastic pick.",
         ],
-        "outputs": {
-            "stl": str(stl),
-            "step": str(step),
-        },
+        "outputs": {"stl": str(stl), "step": str(step)},
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
