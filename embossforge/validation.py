@@ -36,28 +36,14 @@ def validate_relief_field(
     if profile is not None:
         _append_isolated_peak_findings(findings, result, relief_spec, profile)
 
-    # Height change per horizontal millimetre. This is intentionally a loose
-    # experimental heuristic rather than a safety guarantee.
+    # Height change per horizontal millimetre. A normal emboss can contain sharp
+    # walls, so slope alone is advisory. High severity is reserved for narrow
+    # isolated peaks/ridges where steepness combines with small physical width.
     gy, gx = np.gradient(relief_mm, result.mm_per_sample, result.mm_per_sample)
     slope = np.sqrt(gx * gx + gy * gy)
-    max_slope = float(np.max(slope)) if slope.size else 0.0
     p99_slope = float(np.percentile(slope, 99.0)) if slope.size else 0.0
-
-    caution_slope = 2.0
-    high_slope = 4.0
-    if max_slope >= high_slope:
-        findings.append(
-            ValidationFinding(
-                code="paper.steep_local_relief",
-                severity=ValidationSeverity.HIGH,
-                metric=round(max_slope, 3),
-                threshold=high_slope,
-                units="mm/mm",
-                message="The relief contains a very steep local transition that may crease or cut thin paper.",
-                recommendation="Reduce maximum relief, smooth the transition, or continue intentionally after review.",
-            )
-        )
-    elif p99_slope >= caution_slope:
+    caution_slope = 3.0
+    if p99_slope >= caution_slope:
         findings.append(
             ValidationFinding(
                 code="paper.steep_local_relief",
@@ -65,8 +51,8 @@ def validate_relief_field(
                 metric=round(p99_slope, 3),
                 threshold=caution_slope,
                 units="mm/mm",
-                message="Some relief transitions are steep for ordinary paper.",
-                recommendation="Consider smoothing or reducing relief if the paper is delicate.",
+                message="Some relief transitions are steep. This is common in embossing but can be harsher on delicate paper.",
+                recommendation="Test on scrap paper first, or smooth/reduce relief if the paper is fragile.",
             )
         )
 
@@ -113,7 +99,6 @@ def validate_heightfield_mating(
     spec: DieSpec,
     relief_spec: ReliefSpec,
 ) -> ValidationReport:
-    """Verify the generated female field encloses the same canonical male field."""
     findings: list[ValidationFinding] = []
     female_unmirrored = np.fliplr(female_surface_normalized)
     female_cavity_mm = female_unmirrored * max_cavity_mm
@@ -139,10 +124,7 @@ def validate_heightfield_mating(
             )
         )
 
-    return ValidationReport(
-        findings=tuple(findings),
-        verification_level="heightfield-closure",
-    )
+    return ValidationReport(findings=tuple(findings), verification_level="heightfield-closure")
 
 
 def merge_validation_reports(*reports: ValidationReport, override_used: bool = False) -> ValidationReport:
