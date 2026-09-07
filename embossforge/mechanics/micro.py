@@ -117,12 +117,7 @@ def _keyed_pocket(spec: MicroTongsSpec, *, z0: float) -> Any:
 
 
 def _spring_arm(spec: MicroTongsSpec, *, z0: float):
-    """Build one symmetric ladder spring arm.
-
-    The two outer rails land on opposite sides of the jaw. Short rungs keep the
-    arm aligned and, after rotating the STL onto its side, act as vertical print
-    supports for the far rail so no long arm is left floating in mid-air.
-    """
+    """Build one symmetric ladder spring arm."""
     cq = _cq()
     radius = spec.jaw_outer_diameter_mm / 2
     rail = spec.spring_rail_width_mm
@@ -159,7 +154,6 @@ def _spring_arm(spec: MicroTongsSpec, *, z0: float):
 
 
 def _rear_flexure(spec: MicroTongsSpec):
-    """Build the hardware-free rear connection between the two spring arms."""
     cq = _cq()
     radius = spec.jaw_outer_diameter_mm / 2
     rail = spec.spring_rail_width_mm
@@ -175,7 +169,6 @@ def _rear_flexure(spec: MicroTongsSpec):
         )
         flex = column if flex is None else flex.union(column)
 
-    # One thin rear web prevents the two side springs from racking/twisting.
     web = (
         cq.Workplane("XY")
         .center(0, spec.spring_rung_depth_mm / 2)
@@ -203,11 +196,17 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
     upper_arm = _spring_arm(spec, z0=upper_z)
     bridge = _rear_flexure(spec)
 
+    # Compact flat-sided jaw pads make the side-oriented STL sit positively on
+    # the bed. The sockets themselves remain exact circular/keyed die pockets.
     lower_jaw = (
         cq.Workplane("XY")
         .center(0, jaw_y)
-        .circle(spec.jaw_outer_diameter_mm / 2)
-        .extrude(t)
+        .box(
+            spec.jaw_outer_diameter_mm,
+            spec.jaw_outer_diameter_mm,
+            t,
+            centered=(True, True, False),
+        )
     )
     upper_jaw = lower_jaw.translate((0, 0, upper_z))
 
@@ -234,7 +233,7 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
 
 
 def build_micro_tongs_print_orientation(spec: MicroTongsSpec | None = None):
-    """Rotate onto a trussed side that is intentionally printable without large supports."""
+    """Rotate onto a trussed flat side that is intended to print without large supports."""
     spec = spec or micro_tongs_spec()
     part = build_micro_tongs(spec)
     return part.rotate((0, 0, 0), (0, 1, 0), 90).translate(
@@ -252,12 +251,8 @@ def export_micro_press_pack(
     slide_clearance_mm: float = 0.25,
     die_pocket_clearance_mm: float = 0.15,
 ) -> dict[str, str]:
-    """Export the ultra-light one-piece butterfly flexure tongs.
-
-    ``slide_clearance_mm`` remains accepted only so commands copied from the
-    discarded cartridge-based prototype do not break. It has no effect here.
-    """
-    del slide_clearance_mm
+    """Export the ultra-light one-piece butterfly flexure tongs."""
+    del slide_clearance_mm  # obsolete cartridge-era compatibility argument
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -294,7 +289,7 @@ def export_micro_press_pack(
             "solid_pla_mass_upper_bound_g": round(solid_mass, 2),
         },
         "print": {
-            "stl_orientation": "pre-rotated onto trussed side; one outer rail is on the bed and rungs support the opposite rail",
+            "stl_orientation": "pre-rotated onto a flat/trussed side; jaw and one outer rail provide continuous bed contact",
             "recommended_layer_height_mm": 0.20,
             "recommended_walls": 3,
             "recommended_infill_percent": 10,
