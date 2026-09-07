@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
+import shutil
 from typing import Any
 
 from ..micro_die import micro_butterfly_spec
@@ -117,7 +118,6 @@ def _keyed_pocket(spec: MicroTongsSpec, *, z0: float) -> Any:
 
 
 def _spring_arm(spec: MicroTongsSpec, *, z0: float):
-    """Build one symmetric ladder spring arm."""
     cq = _cq()
     radius = spec.jaw_outer_diameter_mm / 2
     rail = spec.spring_rail_width_mm
@@ -196,8 +196,6 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
     upper_arm = _spring_arm(spec, z0=upper_z)
     bridge = _rear_flexure(spec)
 
-    # Compact flat-sided jaw pads make the side-oriented STL sit positively on
-    # the bed. The sockets themselves remain exact circular/keyed die pockets.
     lower_jaw = (
         cq.Workplane("XY")
         .center(0, jaw_y)
@@ -233,7 +231,6 @@ def build_micro_tongs(spec: MicroTongsSpec | None = None):
 
 
 def build_micro_tongs_print_orientation(spec: MicroTongsSpec | None = None):
-    """Rotate onto a trussed flat side that is intended to print without large supports."""
     spec = spec or micro_tongs_spec()
     part = build_micro_tongs(spec)
     return part.rotate((0, 0, 0), (0, 1, 0), 90).translate(
@@ -255,6 +252,13 @@ def export_micro_press_pack(
     del slide_clearance_mm  # obsolete cartridge-era compatibility argument
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+
+    # Remove outputs from the discarded rod-guided micro-press revision so a
+    # user cannot accidentally slice top_bridge.stl/base.stl/etc. after pulling
+    # the new tong design into an existing build directory.
+    legacy_mechanics = out / "mechanics"
+    if legacy_mechanics.exists():
+        shutil.rmtree(legacy_mechanics)
 
     die = micro_butterfly_spec()
     spec = micro_tongs_spec(die_pocket_clearance_mm=die_pocket_clearance_mm)
