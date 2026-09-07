@@ -2,7 +2,57 @@
 
 EmbossForge accepts SVG directly and can vectorize common raster formats such as PNG and JPG. The generator then creates matched male/female geometry with configurable clearance and cavity depth.
 
-The **current implemented artwork path is binary**: foreground artwork is embossed at one constant relief height. A planned vNext **variable-depth grayscale relief** mode is specified in [RELIEF_MODE_SPEC.md](RELIEF_MODE_SPEC.md). The sections below clearly distinguish current behavior from planned relief behavior.
+The **current implemented artwork path is binary**: foreground artwork is embossed at one constant relief height. A planned vNext **variable-depth grayscale relief** mode is specified in [RELIEF_MODE_SPEC.md](RELIEF_MODE_SPEC.md).
+
+Raster/image interpretation is specified separately in [IMAGE_INPUT_SPEC.md](IMAGE_INPUT_SPEC.md). That distinction matters because an image that *looks* embossed is not necessarily a true height map.
+
+Agents creating artwork for EmbossForge should use [`skills/embossforge-design/SKILL.md`](../skills/embossforge-design/SKILL.md).
+
+---
+
+## Three kinds of image input
+
+EmbossForge should distinguish these concepts:
+
+### 1. Flat artwork
+
+Examples:
+
+- clean SVG logos;
+- silhouettes;
+- line art;
+- ordinary high-contrast PNGs;
+- monograms.
+
+Use the current binary path unless the user deliberately assigns multiple relief levels.
+
+### 2. True height maps
+
+A height map was authored so grayscale represents physical Z height.
+
+EmbossForge's planned default convention is:
+
+```text
+white = zero relief
+black = maximum relief
+```
+
+A machine height map should have no lighting, cast shadows, specular highlights, perspective, or metallic rendering.
+
+### 3. Shaded / 3D-looking references
+
+Examples:
+
+- AI-generated silver medallions;
+- rendered bas-relief artwork;
+- bevelled Photoshop-style logos;
+- photographs of coins or carvings.
+
+These are useful inputs, but their grayscale tones include **lighting** as well as shape. EmbossForge should accept them and offer **Convert 3D-looking artwork to relief**, not silently treat raw luminance as literal depth.
+
+Full behavior: [IMAGE_INPUT_SPEC.md](IMAGE_INPUT_SPEC.md).
+
+---
 
 ## Best input format for current binary mode
 
@@ -10,11 +60,11 @@ Prefer SVG whenever possible. A clean vector logo or silhouette gives the most p
 
 Raster input works best when it is:
 
-- high contrast
-- dark artwork on a light background
-- free of photographic texture
-- large enough that edges are not pixelated
-- simple enough to survive the target nozzle width
+- high contrast;
+- dark artwork on a light background;
+- free of photographic texture;
+- large enough that edges are not pixelated;
+- simple enough to survive the target nozzle width.
 
 Use `--invert` when the foreground is light and the background is dark.
 
@@ -22,7 +72,9 @@ Use `--invert` when the foreground is light and the background is dark.
 
 An image can look excellent on a monitor and still be a poor embossing design. Very thin lines, tiny islands, narrow gaps, and delicate serif details may merge or disappear when printed.
 
-For the current FlashForge Adventurer 5M / 0.4 mm development profile, treat roughly 0.5 mm as a conservative minimum feature width until calibration proves otherwise. Fine details may improve with a 0.25 mm nozzle.
+For the current FlashForge Adventurer 5M / 0.4 mm development profile, treat roughly **0.50 mm** as the current conservative minimum feature width and **0.45 mm** as the current profile minimum gap until calibration proves otherwise. These are printer/profile guidance, not universal paper-safety guarantees.
+
+Fine details may improve with a 0.25 mm nozzle.
 
 ## SVG coordinate handling
 
@@ -30,10 +82,10 @@ EmbossForge canonicalizes non-zero and negative SVG `viewBox` origins before Ope
 
 If an SVG still renders incorrectly, reduce it to a minimal file and open an issue with:
 
-- the original artwork
-- the generated normalized SVG
-- the generated SCAD file
-- a screenshot of the slicer preview
+- the original artwork;
+- the generated normalized SVG;
+- the generated SCAD file;
+- a screenshot of the slicer preview.
 
 ## Raster conversion in current binary mode
 
@@ -80,7 +132,8 @@ Good examples:
 - large regions at clearly different gray values;
 - broad transitions rather than one-pixel gradients;
 - coarse texture whose pitch is meaningful at the physical die size;
-- a small number of intentional height levels for FDM printing.
+- a small number of intentional height levels for FDM printing;
+- a white zero-height background with darker geometric relief regions.
 
 Riskier examples:
 
@@ -89,9 +142,57 @@ Riskier examples:
 - very fine grain;
 - narrow bright/dark halos from sharpening;
 - tiny high-contrast speckles;
-- abrupt tall ridges thinner than the printer can resolve.
+- abrupt tall ridges thinner than the printer can resolve;
+- metallic highlights and shadows being mistaken for geometry.
 
 Relief mode will include a zero/dead-zone threshold so near-white noise does not necessarily become microscopic relief.
+
+### Shaded renders are references, not height maps
+
+A realistic gray/metallic butterfly medallion can contain a bright highlight on one edge of a raised wing cell and a dark shadow on the other edge. The physical wing cell may be at one consistent height, so mapping those light/shadow pixels directly to Z would invent false geometry.
+
+For such images, the planned workflow is:
+
+```text
+shaded PNG
+   |
+   v
+source interpretation: shaded-reference
+   |
+   v
+lighting/detail normalization
+   |
+   v
+derived machine height map
+   |
+   v
+user preview + validation
+   |
+   v
+matched dies
+```
+
+The original image remains preserved as provenance; the derived height map is the machine geometry input.
+
+### Agent-authored height maps
+
+When an image-capable LLM/agent is available, the preferred workflow for ornate designs is to ask it to produce a **true unlit height map** and, optionally, a separate decorative preview.
+
+Repository skill:
+
+```text
+skills/embossforge-design/SKILL.md
+```
+
+The skill teaches agents to:
+
+- design in physical millimetres rather than only pixels;
+- keep details printable for the target nozzle;
+- use white as zero relief and dark tones as increasing relief by default;
+- avoid cast shadows/highlights in machine maps;
+- separate preview renders from machine geometry;
+- simplify ornate floral/butterfly/monogram designs without losing their identity;
+- avoid claiming paper safety without physical validation.
 
 ### SVG grayscale semantics
 
@@ -116,7 +217,9 @@ EmbossForge's planned validator will warn about those conditions using experimen
 
 Impossible geometry, such as a female cavity cutting through the base, remains a hard error and cannot be bypassed.
 
-Full behavior: [docs/RELIEF_MODE_SPEC.md](RELIEF_MODE_SPEC.md).
+Full relief behavior: [RELIEF_MODE_SPEC.md](RELIEF_MODE_SPEC.md).
+
+Full raster/source interpretation behavior: [IMAGE_INPUT_SPEC.md](IMAGE_INPUT_SPEC.md).
 
 ---
 
