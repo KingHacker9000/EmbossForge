@@ -18,7 +18,7 @@ class MainWindow(legacy.MainWindow):
     """Production desktop window with the completed vNext relief workflow.
 
     The existing polished UI remains the base implementation. This subclass only
-    changes relief-source behavior: shaded references are now supported through a
+    changes relief-source behavior: shaded references are supported through a
     deterministic, inspectable conversion and require an explicit preview/accept
     step before STL rendering.
     """
@@ -92,7 +92,9 @@ class MainWindow(legacy.MainWindow):
 
     def _start_generation(self, request, preview_only: bool = False) -> None:
         self._preview_only = preview_only
+        super()._start_generation(request)
         if preview_only:
+            # Base setup owns worker/cursor bookkeeping; override only the copy.
             self.generate_button.setText("Deriving preview…")
             self.message.setText(
                 "Interpreting the shaded reference into an emboss-oriented height map and validating the matched pair…"
@@ -100,7 +102,6 @@ class MainWindow(legacy.MainWindow):
             self.message.setProperty("state", "working")
             self.validation_message.setText("Deriving shared relief geometry before STL rendering…")
             self._refresh_style(self.message)
-        super()._start_generation(request)
 
     def _generated(self, result) -> None:
         if self._preview_only and result.source_interpretation == SourceInterpretation.SHADED_REFERENCE:
@@ -142,9 +143,39 @@ class MainWindow(legacy.MainWindow):
             )
 
     def _failed(self, message: str) -> None:
+        was_preview = self._preview_only
         self._preview_only = False
-        # Keep a pending accepted preview only when the failure came from the
-        # final render; generation-risk flows in the base class may retry safely.
+
+        # During the preview pass, a high paper-risk confirmation must retry the
+        # SCAD-only preview request—not jump ahead to final STL generation.
+        if was_preview and "high experimental paper-risk" in message and self._last_request is not None:
+            self.message.setText(
+                "The derived geometry can mate, but EmbossForge found a high experimental paper-damage risk."
+            )
+            self.message.setProperty("state", "warning")
+            self._refresh_style(self.message)
+
+            box = QtWidgets.QMessageBox(self)
+            box.setWindowTitle("High paper-risk warning")
+            box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+            box.setText("This interpreted relief may be harsh on the selected paper.")
+            box.setInformativeText(
+                message
+                + "\n\nGenerate anyway accepts only the paper-risk heuristic. Die-to-die interference and invalid geometry remain non-overrideable."
+            )
+            box.addButton("Go back and adjust", QtWidgets.QMessageBox.ButtonRole.RejectRole)
+            generate_anyway = box.addButton("Generate preview anyway", QtWidgets.QMessageBox.ButtonRole.AcceptRole)
+            box.exec()
+            if box.clickedButton() is generate_anyway:
+                self._start_generation(
+                    replace(self._last_request, allow_risky=True, render_stl=False),
+                    preview_only=True,
+                )
+            else:
+                self._pending_shaded_request = None
+                self._update_generate_enabled()
+            return
+
         if "high experimental paper-risk" not in message:
             self._pending_shaded_request = None
         super()._failed(message)
