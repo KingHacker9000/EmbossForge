@@ -11,7 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 18
 
     steps:
       - name: Check out repository
@@ -39,11 +39,48 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-      - name: CLI smoke test
+      - name: Binary CLI smoke test
         run: |
           embossforge --version
           embossforge doctor
           embossforge butterfly-test --out build/ci-butterfly
+
+      - name: Variable-depth relief STL smoke test
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import cv2
+          import numpy as np
+
+          out = Path("build")
+          out.mkdir(exist_ok=True)
+          image = np.full((96, 96), 255, dtype=np.uint8)
+          cv2.circle(image, (48, 48), 30, 96, -1)
+          cv2.circle(image, (48, 48), 18, 24, -1)
+          assert cv2.imwrite(str(out / "ci-heightmap.png"), image)
+          PY
+          embossforge die build/ci-heightmap.png \
+            --out build/ci-relief \
+            --name relief-smoke \
+            --mode relief \
+            --source-interpretation height-map \
+            --relief-max 0.30 \
+            --relief-style stepped \
+            --relief-levels 4 \
+            --paper copy \
+            --profile profiles/flashforge_adventurer_5m.toml \
+            --allow-risky
+          test -s build/ci-relief/relief-smoke/relief-smoke_male.stl
+          test -s build/ci-relief/relief-smoke/relief-smoke_female.stl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("build/ci-relief/relief-smoke/relief-smoke_manifest.json").read_text())
+          assert manifest["schema_version"] == 2
+          assert manifest["relief"]["mode"] == "relief"
+          assert "exported-stl-closure" in manifest["validation"]["verification_level"]
+          print("relief STL + closure smoke OK")
+          PY
 
   desktop-smoke:
     runs-on: windows-latest
@@ -69,8 +106,8 @@ jobs:
         shell: pwsh
         run: python -m compileall -q embossforge
 
-      - name: Construct desktop window offscreen
+      - name: Construct vNext desktop window offscreen
         shell: pwsh
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
-          python -c "from PySide6.QtWidgets import QApplication; from embossforge.gui import MainWindow; app=QApplication([]); w=MainWindow(); assert w.windowTitle() == 'EmbossForge'; assert not w.generate_button.isEnabled(); print('desktop smoke OK')"
+          python -c "from PySide6.QtWidgets import QApplication; from embossforge.gui_vnext import MainWindow; app=QApplication([]); w=MainWindow(); assert w.windowTitle() == 'EmbossForge'; assert not w.generate_button.isEnabled(); assert w.source_interpretation.count() >= 2; print('vNext desktop smoke OK')"
