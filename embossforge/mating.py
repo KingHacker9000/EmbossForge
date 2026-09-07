@@ -3,10 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import struct
+import subprocess
 import xml.etree.ElementTree as ET
 
 from .config import DieSpec, PrinterProfile
 from .relief import ValidationFinding, ValidationReport, ValidationSeverity
+from .scad_backend import find_openscad
 
 
 _LENGTH_RE = re.compile(r"^\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*([a-zA-Z%]*)\s*$")
@@ -14,8 +17,6 @@ _LENGTH_RE = re.compile(r"^\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*([a-zA-Z%]*)\s
 
 @dataclass(frozen=True)
 class PrintablePairEstimate:
-    """Summary of how much of an artwork file could be inspected deterministically."""
-
     checked_features: int
     unmeasured_features: int
     source_kind: str
@@ -34,28 +35,23 @@ def validate_printable_pair(
     spec: DieSpec,
     profile: PrinterProfile | None,
 ) -> tuple[ValidationReport, PrintablePairEstimate]:
-    """Perform a fast nozzle/profile-aware matched-pair preflight.
-
-    This is deliberately conservative. It catches explicit SVG strokes and simple
-    primitives whose physical widths can be measured without a slicer. The female
-    must accommodate the *effective printable male*, not merely the ideal source
-    width. More complete slicer/toolpath validation can be layered on later.
-    """
+    """Perform a conservative nozzle/profile-aware SVG matched-pair preflight."""
     if profile is None:
         estimate = PrintablePairEstimate(0, 0, "no-printer-profile")
-        report = ValidationReport(
-            findings=(
-                ValidationFinding(
-                    code="mating.profile_missing",
-                    severity=ValidationSeverity.INFO,
-                    overridable=True,
-                    message="Matched-pair printability was not checked because no printer profile was selected.",
-                    recommendation="Select a printer/nozzle profile for nozzle-aware closure validation.",
+        return (
+            ValidationReport(
+                findings=(
+                    ValidationFinding(
+                        code="mating.profile_missing",
+                        severity=ValidationSeverity.INFO,
+                        message="Matched-pair printability was not checked because no printer profile was selected.",
+                        recommendation="Select a printer/nozzle profile for nozzle-aware closure validation.",
+                    ),
                 ),
+                verification_level="unverified",
             ),
-            verification_level="unverified",
+            estimate,
         )
-        return report, estimate
 
     path = Path(artwork_svg)
     try:
@@ -105,15 +101,12 @@ def validate_printable_pair(
         tag = element.tag.rsplit("}", 1)[-1]
         if tag in {"svg", "g", "defs", "style", "metadata", "title", "desc", "clipPath", "mask"}:
             continue
-
         feature_widths = _measurable_feature_widths(element, tag, scale_mm_per_unit)
         if feature_widths:
             checked += len(feature_widths)
             for label, width_mm in feature_widths:
                 findings.extend(_check_width(label, width_mm, spec, profile))
         elif tag in {"path", "polygon", "polyline", "text", "use"}:
-            # These can contain narrow filled/counter geometry that cannot be
-            # measured reliably without flattening/rasterizing the SVG.
             unmeasured += 1
 
     if unmeasured:
@@ -121,12 +114,11 @@ def validate_printable_pair(
             ValidationFinding(
                 code="mating.partial_geometry_coverage",
                 severity=ValidationSeverity.INFO,
-                message=f"{unmeasured} complex SVG element(s) require later raster/slicer-level closure verification.",
-                recommendation="EmbossForge will preserve this as partial verification in the manifest.",
+                message=f"{unmeasured} complex SVG element(s) still require raster/slicer-level closure verification.",
+                recommendation="EmbossForge records this as partial verification rather than claiming full slicer equivalence.",
                 details={"unmeasured_elements": unmeasured},
             )
         )
-
     if checked == 0 and unmeasured == 0:
         findings.append(
             ValidationFinding(
@@ -141,19 +133,119 @@ def validate_printable_pair(
     return ValidationReport(findings=tuple(findings), verification_level=level), estimate
 
 
-def _check_width(
-    label: str,
-    source_width_mm: float,
+def validate_exported_stl_closure(
+    male_stl: str | Path | None,
+    female_stl: str | Path | None,
     spec: DieSpec,
-    profile: PrinterProfile,
-) -> list[ValidationFinding]:
-    findings: list[ValidationFinding] = []
-    positive_min = profile.min_feature_mm
-    negative_min = profile.min_gap_mm
+) -> ValidationReport:
+    """Boolean-check exported solids at nominal face separation.
 
-    # A slicer may inflate a narrow positive to one line. The corresponding
-    # female groove must accommodate that effective positive plus deliberate XY
-    # clearance, not merely the ideal source line.
+    This checks the actual exported CAD solids (orientation included), not slicer
+    toolpaths. It complements the printer-aware feature preflight.
+    """
+    if male_stl is None or female_stl is None:
+        return ValidationReport(verification_level="stl-closure-not-rendered")
+    male = Path(male_stl)
+    female = Path(female_stl)
+    if not male.exists() or not female.exists():
+        return ValidationReport(
+            findings=(
+                ValidationFinding(
+                    code="mating.stl_missing",
+                    severity=ValidationSeverity.ERROR,
+                    overridable=False,
+                    message="One or both exported STL files are missing, so closure cannot be validated.",
+                ),
+            ),
+            verification_level="exported-stl-closure",
+        )
+
+    openscad = find_openscad()
+    if openscad is None:
+        return ValidationReport(
+            findings=(
+                ValidationFinding(
+                    code="mating.openscad_check_unavailable",
+                    severity=ValidationSeverity.CAUTION,
+                    message="Exported-STL closure check was skipped because OpenSCAD was unavailable.",
+                ),
+            ),
+            verification_level="exported-stl-closure-unavailable",
+        )
+
+    check_scad = male.parent / ".embossforge_closure_check.scad"
+    collision_stl = male.parent / ".embossforge_closure_collision.stl"
+    male_path = _scad_path(male)
+    female_path = _scad_path(female)
+    # Female printed face is at z=base_h. Rotate 180 degrees about Y (the real
+    # upper-cartridge transform), then translate so the two nominal flat faces
+    # are separated by the selected paper thickness.
+    translation_z = 2.0 * spec.base_thickness_mm + spec.paper_thickness_mm
+    check_scad.write_text(
+        f'''// Temporary EmbossForge nominal-closure collision check.\n'
+intersection() {{\n'
+  import(file="{male_path}", convexity=10);\n'
+  translate([0, 0, {translation_z:.6f}])\n'
+    rotate([0, 180, 0])\n'
+      import(file="{female_path}", convexity=10);\n'
+}}\n'''.replace("'\n", "\n"),
+        encoding="utf-8",
+    )
+
+    try:
+        if collision_stl.exists():
+            collision_stl.unlink()
+        proc = subprocess.run(
+            [str(openscad), "-o", str(collision_stl), str(check_scad)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        diagnostic = (proc.stderr or "") + "\n" + (proc.stdout or "")
+        empty_message = "top level object is empty" in diagnostic.lower()
+        if proc.returncode != 0 and not empty_message:
+            return ValidationReport(
+                findings=(
+                    ValidationFinding(
+                        code="mating.closure_boolean_failed",
+                        severity=ValidationSeverity.ERROR,
+                        overridable=False,
+                        message="OpenSCAD could not evaluate the exported-STL closure intersection.",
+                        recommendation=diagnostic.strip()[:500] or "Inspect the exported pair manually.",
+                    ),
+                ),
+                verification_level="exported-stl-closure",
+            )
+
+        triangles = _stl_triangle_count(collision_stl) if collision_stl.exists() else 0
+        if triangles > 0:
+            return ValidationReport(
+                findings=(
+                    ValidationFinding(
+                        code="mating.exported_stl_interference",
+                        severity=ValidationSeverity.ERROR,
+                        overridable=False,
+                        metric=triangles,
+                        units="triangles",
+                        message="The exported male and female STL solids intersect at nominal closure.",
+                        recommendation="Do not print this pair; fix orientation, cavity, clearance, or canonical geometry first.",
+                    ),
+                ),
+                verification_level="exported-stl-closure",
+            )
+        return ValidationReport(verification_level="exported-stl-closure")
+    finally:
+        for temp in (check_scad, collision_stl):
+            try:
+                temp.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def _check_width(label: str, source_width_mm: float, spec: DieSpec, profile: PrinterProfile) -> list[ValidationFinding]:
+    findings: list[ValidationFinding] = []
+    positive_min = max(profile.min_feature_mm, profile.effective_line_width_mm)
+    negative_min = profile.effective_min_negative_feature_mm
     predicted_male_width = max(source_width_mm, positive_min)
     nominal_female_width = source_width_mm + 2.0 * spec.female_xy_clearance_mm
     required_female_width = max(
@@ -172,7 +264,7 @@ def _check_width(
                 units="mm",
                 message=(
                     f"{label} is about {source_width_mm:.3f} mm wide, below the selected printer's "
-                    f"{positive_min:.3f} mm positive-feature limit. It may survive on the male as a single "
+                    f"{positive_min:.3f} mm effective positive-feature width. It may survive on the male as a single "
                     "extrusion while its ideal female groove remains too narrow."
                 ),
                 recommendation="Thicken/remove the feature on the shared master artwork or choose a finer nozzle/profile.",
@@ -195,7 +287,6 @@ def _check_width(
                 recommendation="Canonicalize the feature to printer resolution before deriving both dies.",
             )
         )
-
     return findings
 
 
@@ -249,13 +340,8 @@ def _length_to_units(value: str | None) -> float | None:
     return None
 
 
-def _measurable_feature_widths(
-    element: ET.Element,
-    tag: str,
-    scale_mm_per_unit: float,
-) -> list[tuple[str, float]]:
+def _measurable_feature_widths(element: ET.Element, tag: str, scale_mm_per_unit: float) -> list[tuple[str, float]]:
     results: list[tuple[str, float]] = []
-
     stroke = _style_value(element, "stroke")
     stroke_width = _length_to_units(_style_value(element, "stroke-width"))
     if stroke and stroke.lower() != "none" and stroke_width and stroke_width > 0:
@@ -275,5 +361,25 @@ def _measurable_feature_widths(
         ry = _length_to_units(element.attrib.get("ry"))
         if rx and ry and rx > 0 and ry > 0:
             results.append(("ellipse narrow diameter", 2.0 * min(rx, ry) * scale_mm_per_unit))
-
     return results
+
+
+def _scad_path(path: Path) -> str:
+    return str(path.resolve()).replace("\\", "/").replace('"', '\\"')
+
+
+def _stl_triangle_count(path: Path) -> int:
+    if not path.exists() or path.stat().st_size < 15:
+        return 0
+    data = path.read_bytes()
+    # Binary STL has an 80-byte header + uint32 triangle count + 50 bytes/tri.
+    if len(data) >= 84:
+        count = struct.unpack_from("<I", data, 80)[0]
+        if 84 + 50 * count == len(data):
+            return int(count)
+    # ASCII fallback.
+    try:
+        text = data.decode("utf-8", errors="ignore").lower()
+    except Exception:
+        return 0
+    return text.count("facet normal")
