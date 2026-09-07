@@ -45,22 +45,20 @@ jobs:
           embossforge doctor
           embossforge butterfly-test --out build/ci-butterfly
 
-      - name: Butterfly micro-press smoke test
+      - name: Butterfly micro-tongs smoke test
         run: |
           embossforge micro-press --out build/ci-micro-press
-          test -s build/ci-micro-press/mechanics/cartridge.stl
-          test -s build/ci-micro-press/mechanics/receiver.stl
-          test -s build/ci-micro-press/mechanics/lever.stl
+          test -s build/ci-micro-press/micro_butterfly_tongs.stl
+          test -s build/ci-micro-press/micro_butterfly_tongs.step
           test -s build/ci-micro-press/micro_press_manifest.json
           python - <<'PY'
           import json
           from pathlib import Path
           manifest = json.loads(Path("build/ci-micro-press/micro_press_manifest.json").read_text())
+          assert manifest["mode"] == "micro-butterfly-flexure-tongs"
           assert manifest["exact_die_contract_mm"]["diameter"] == 16.0
-          assert manifest["exact_die_contract_mm"]["key_width"] == 3.5
-          assert manifest["exact_die_contract_mm"]["key_depth"] == 1.5
-          assert manifest["mechanics_outputs"]["cartridge_stl"]
-          print("butterfly micro press export OK")
+          assert manifest["derived"]["solid_pla_mass_upper_bound_g"] < 8.0
+          print("micro flexure tongs smoke OK")
           PY
 
       - name: Variable-depth relief STL smoke test
