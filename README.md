@@ -6,24 +6,32 @@ The goal is simple: provide artwork and a few physical specifications, and gener
 
 ## Current status
 
-V0.1 already supports:
+The artwork/die pipeline works, and the V0.2 mechanical prototype is now source-generated as well.
 
-- SVG artwork input
-- normalized artwork generation
-- automatic matched male/female OpenSCAD dies
-- STL export through OpenSCAD
-- printer-aware defaults for the FlashForge Adventurer 5M
-- manifest generation for reproducibility
-- a CLI and test suite
+Current capabilities:
 
-V0.2 mechanical source is now in progress and includes a first parametric cartridge/receiver interface and conservative CadQuery lever-press generator. These are **prototype geometries** that must be calibrated and physically validated before normal use.
+- SVG and raster artwork normalization
+- automatic matched male/female emboss dies
+- keyed die carriers so rotational alignment is deterministic
+- safe circular artwork clipping for arbitrary designs
+- configurable female XY clearance and cavity depth
+- OpenSCAD + STL die output
+- printer/emboss calibration coupons
+- universal interchangeable cartridge + receiver geometry
+- parametric rod-guided lever press in CadQuery
+- STEP + STL mechanical exports
+- generated hardware/assembly manifest
+- automatic open/closed CadQuery collision checks
+- Blender assembly loader for visual QA without rebuilding the model by hand
+
+**Important:** outputs generated before the keyed-carrier update should be regenerated before printing. The current die interface and female orientation logic are different from the earliest V0.1 prototype files.
 
 ## Tool philosophy
 
 EmbossForge deliberately uses more than one 3D tool:
 
 - **CadQuery**: source of truth for precision mechanical geometry, dimensions, fits, cartridges, press parts, and STEP/STL export.
-- **OpenSCAD**: simple reproducible backend for artwork relief dies and calibration pieces.
+- **OpenSCAD**: reproducible backend for artwork relief dies and calibration pieces.
 - **Blender**: visual QA, ergonomics, presentation renders, moving-assembly inspection, and artistic geometry when useful.
 - **Python**: CLI, artwork preprocessing, validation, printer/paper profiles, orchestration, and automation.
 
@@ -64,44 +72,108 @@ build/
     └── embossforge_mark_manifest.json
 ```
 
-The female die is generated with configurable lateral clearance and extra cavity depth so it is not simply a mathematically exact negative of the male relief.
+The current 42 mm insert has a hidden orientation tab on the carrier base. Artwork is clipped to the safe circular emboss area, and the female cavity is generated with configurable lateral/depth clearance.
 
-## Default die geometry
+The upper cartridge uses the same physical cartridge/receiver geometry as the lower one and is installed by rotating it 180 degrees about Y. The generator compensates by mirroring the female artwork in X before extrusion.
 
-The current example uses a 42 mm round die with:
+## Generate calibration artifacts
 
-- 3.0 mm base thickness
-- 0.65 mm male relief
-- 0.20 mm female XY clearance
-- 0.20 mm additional female cavity depth
-- 0.10 mm nominal paper thickness
-- 3.0 mm artwork margin
+```powershell
+embossforge calibrate
+```
 
-These are development defaults, not final manufacturing constants. EmbossForge includes calibration work as a first-class part of the roadmap so values can be tuned to the actual printer, material, nozzle, and paper stock.
+This creates a mechanical clearance coupon plus matched male/female emboss matrices. Use these before treating prototype tolerances as final for a particular nozzle, filament, and paper stock.
+
+See [`docs/CALIBRATION.md`](docs/CALIBRATION.md).
+
+## Generate the V0.2 mechanical pack
+
+```powershell
+embossforge mechanics
+```
+
+Output is written to `build/mechanics/` and includes:
+
+- `base.step` / `base.stl`
+- `side_cheek.step` / `side_cheek.stl` — print two
+- `top_bridge.step` / `top_bridge.stl`
+- `lever.step` / `lever.stl`
+- `contact_roller.step` / `contact_roller.stl`
+- `platen.step` / `platen.stl`
+- `stop_sleeve.step` / `stop_sleeve.stl` — print two
+- `receiver.step` / `receiver.stl` — print two
+- `cartridge.step` / `cartridge.stl` — print two
+- `assembly_layout.json`
+- `mechanics_manifest.json`
+
+The generator validates the open and nominally closed assemblies for unintended printed-part intersections before accepting the pack.
+
+### V0.2 press architecture
+
+The current prototype uses:
+
+- 130 × 155 × 12 mm printed base
+- two printed side cheeks
+- printed top bridge
+- two 8 mm smooth steel guide rods
+- sliding upper platen
+- universal top/bottom cartridge receivers
+- two printed stop sleeves around the guide rods
+- 205 mm lever
+- transverse roller under the lever rather than sliding plastic-on-plastic contact
+- M6-class main pivot
+- M5-class roller pin
+
+All unique printable parts are designed to fit individually inside the FlashForge Adventurer 5M's 220 mm build envelope.
+
+The exact hardware lengths are written into `mechanics_manifest.json` from the same dimensional model, so the manifest—not this README—is the source to use when buying/cutting hardware.
+
+## Optional Blender visual QA
+
+After generating the mechanical pack, Blender can load the source-generated assembly directly:
+
+```powershell
+blender --python blender\import_assembly.py -- build\mechanics open
+```
+
+or:
+
+```powershell
+blender --python blender\import_assembly.py -- build\mechanics closed
+```
+
+This exists specifically so a human or GPT-6 Astra/Codex can inspect the real generated assembly without spending agent time recreating geometry. Blender is not the dimensional source of truth.
 
 ## Target printer
 
 Primary development printer:
 
 - FlashForge Adventurer 5M
-- 220 x 220 x 220 mm build volume
+- 220 × 220 × 220 mm build volume
 - 0.4 mm nozzle for first prototypes
 - 0.25 mm nozzle as a later precision profile
 
 ## Roadmap
 
-### V0.2 — mechanical platform
+### V0.2 — mechanical validation
 
-- standardized interchangeable cartridge pair
-- keyed orientation and anti-misassembly geometry
-- calibration generator for XY clearance, relief depth, paper gap, and fine-feature limits
-- parametric CadQuery press/lever mechanism
-- STEP and STL exports for mechanical parts
-- assembly coordinates and diagnostic renders
+- [x] keyed interchangeable die-carrier standard
+- [x] universal cartridge + receiver
+- [x] calibration generator
+- [x] parametric rod-guided CadQuery lever press
+- [x] STEP/STL export
+- [x] generated assembly metadata
+- [x] open/closed solid collision checks
+- [x] Blender assembly loader
+- [ ] print calibration coupons
+- [ ] tune AD5M 0.4 mm clearances from physical measurements
+- [ ] print first cartridge/receiver pair
+- [ ] visually inspect generated assembly in Blender/local CAD
+- [ ] print and physically validate the press at low force
 
 ### V0.3 — artwork intelligence
 
-- raster-to-vector cleanup
+- raster-to-vector cleanup improvements
 - minimum printable feature checks
 - automatic line/gap repair
 - text and circular-seal layout generator
@@ -118,11 +190,11 @@ Primary development printer:
 
 ## Agent policy
 
-See [`AGENTS.md`](AGENTS.md). The short version: Astra/Codex is intentionally reserved for tasks that truly need the user's local GUI/3D environment. Ordinary Python, tests, documentation, and most parametric geometry should be implemented directly in source code first.
+See [`AGENTS.md`](AGENTS.md). GPT-6 Astra/Codex usage is intentionally reserved for tasks that genuinely benefit from the user's local GUI/3D environment. Ordinary Python, tests, documentation, and parametric geometry should be implemented directly in source code first.
 
 ## Safety / prototype warning
 
-The current press geometry is a prototype. Do not apply large forces until the printed parts, pivot hardware, hard stops, and failure modes have been physically inspected. Keep fingers away from the die gap while operating the press. Printed plastic can fail suddenly under load.
+The current press geometry is a prototype. Do not apply large forces until the printed parts, pivot hardware, hard stops, and failure modes have been physically inspected. Keep fingers away from the die gap while operating the press. Printed plastic can fail suddenly under load. Begin emboss tests with low force and wear eye protection during early mechanical testing.
 
 ## Licensing
 
