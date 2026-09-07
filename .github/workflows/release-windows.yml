@@ -30,24 +30,36 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[cad,gui,dev]"
-          pip install "pyinstaller>=6.12"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install -e ".[cad,gui,dev]"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install "pyinstaller>=6.12"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          exit 0
 
       - name: Install OpenSCAD and Inno Setup
         shell: pwsh
         run: |
           choco install openscad -y --no-progress
+          if ($LASTEXITCODE -notin @(0, 1641, 3010)) { exit $LASTEXITCODE }
           choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -notin @(0, 1641, 3010)) { exit $LASTEXITCODE }
+          exit 0
 
       - name: Run tests
         shell: pwsh
-        run: pytest -q
+        run: |
+          python -m pytest -q
+          $testExit = $LASTEXITCODE
+          Write-Host "pytest exit code: $testExit"
+          exit $testExit
 
       - name: Smoke-test desktop window
         shell: pwsh
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
           python -c "from PySide6.QtWidgets import QApplication; from embossforge.gui import MainWindow; app=QApplication([]); w=MainWindow(); assert w.windowTitle() == 'EmbossForge'; print('desktop window OK')"
+          exit $LASTEXITCODE
 
       - name: Build portable desktop app
         shell: pwsh
@@ -60,6 +72,7 @@ jobs:
             --name EmbossForge `
             --hidden-import cv2 `
             packaging/desktop_entry.py
+          exit $LASTEXITCODE
 
       - name: Bundle OpenSCAD and notices
         shell: pwsh
@@ -98,8 +111,12 @@ jobs:
         shell: pwsh
         run: |
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe"
+          }
           if (-not (Test-Path $iscc)) { throw "Inno Setup compiler not found" }
           & $iscc "packaging\windows\EmbossForge.iss"
+          exit $LASTEXITCODE
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
