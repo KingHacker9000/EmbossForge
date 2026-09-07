@@ -26,6 +26,7 @@ from .relief import (
 )
 from .relief_backend import generate_relief_die_pair
 from .scad_backend import generate_die_pair
+from .shaded_reference import convert_shaded_reference
 from .validation import merge_validation_reports, validate_heightfield_mating, validate_relief_field
 
 
@@ -130,7 +131,11 @@ def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
         clearance = base_spec.female_xy_clearance_mm
         clearance_source = "default"
 
-    effective_relief = request.relief.max_relief_mm if (mode == ArtworkMode.RELIEF and request.relief) else request.relief_height_mm
+    effective_relief = (
+        request.relief.max_relief_mm
+        if mode == ArtworkMode.RELIEF and request.relief
+        else request.relief_height_mm
+    )
     spec = replace(
         base_spec,
         diameter_mm=request.diameter_mm,
@@ -195,14 +200,18 @@ def _generate_binary(
     preflight, estimate = validate_printable_pair(normalized, spec, profile)
     if request.enforce_mating and preflight.blocking_findings:
         first = preflight.blocking_findings[0]
-        raise ValueError(f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip())
+        raise ValueError(
+            f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip()
+        )
 
     outputs = generate_die_pair(normalized, out, name, spec, render_stl=request.render_stl)
     closure = validate_exported_stl_closure(outputs.get("male_stl"), outputs.get("female_stl"), spec)
     validation = merge_validation_reports(preflight, closure)
     if request.enforce_mating and validation.blocking_findings:
         first = validation.blocking_findings[0]
-        raise ValueError(f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip())
+        raise ValueError(
+            f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip()
+        )
 
     _write_generation_context(
         outputs["manifest"],
@@ -217,6 +226,7 @@ def _generate_binary(
         validation=validation,
         mating_estimate=estimate,
         relief_spec=None,
+        source_derivation=None,
     )
     return DieGenerationResult(
         name=name,
@@ -245,22 +255,33 @@ def _generate_relief(
     clearance_source: str,
     interpretation: SourceInterpretation,
 ) -> DieGenerationResult:
-    if interpretation == SourceInterpretation.SHADED_REFERENCE:
-        raise ValueError(
-            "Automatic shaded-reference conversion is not enabled in the deterministic desktop backend yet. "
-            "Convert the reference to an unlit EmbossForge height map first (see skills/embossforge-design/SKILL.md), "
-            "then choose source interpretation 'height-map'."
-        )
-    if interpretation != SourceInterpretation.HEIGHT_MAP:
-        raise ValueError("Variable-depth relief currently requires source interpretation 'height-map'.")
-
     relief_spec = request.relief or ReliefSpec(max_relief_mm=request.relief_height_mm)
     relief_spec.validate()
     spec = replace(spec, relief_height_mm=relief_spec.max_relief_mm)
     spec.validate()
 
-    heightmap = build_height_map(artwork, out, name, spec, relief_spec, profile)
-    female_surface, max_cavity, female_field = build_female_surface_map(heightmap, out, name, spec, relief_spec)
+    source_derivation: dict[str, object] | None = None
+    derived_outputs: dict[str, Path] = {}
+    if interpretation == SourceInterpretation.SHADED_REFERENCE:
+        derived = convert_shaded_reference(artwork, out, name, spec, relief_spec, profile)
+        height_source = derived.height_map
+        source_derivation = derived.to_manifest_dict()
+        derived_outputs = {
+            "derived_heightmap": derived.height_map,
+            "derived_relief_preview": derived.relief_preview,
+            "derived_foreground_mask": derived.foreground_mask,
+        }
+    elif interpretation == SourceInterpretation.HEIGHT_MAP:
+        height_source = artwork
+    else:
+        raise ValueError(
+            "Variable-depth relief requires source interpretation 'height-map' or 'shaded-reference'."
+        )
+
+    heightmap = build_height_map(height_source, out, name, spec, relief_spec, profile)
+    female_surface, max_cavity, female_field = build_female_surface_map(
+        heightmap, out, name, spec, relief_spec
+    )
 
     risk_report = validate_relief_field(
         heightmap,
@@ -269,12 +290,18 @@ def _generate_relief(
         profile,
         override_used=request.allow_risky,
     )
-    field_mating = validate_heightfield_mating(heightmap, female_field, max_cavity, spec, relief_spec)
-    validation = merge_validation_reports(risk_report, field_mating, override_used=request.allow_risky)
+    field_mating = validate_heightfield_mating(
+        heightmap, female_field, max_cavity, spec, relief_spec
+    )
+    validation = merge_validation_reports(
+        risk_report, field_mating, override_used=request.allow_risky
+    )
 
     if validation.blocking_findings:
         first = validation.blocking_findings[0]
-        raise ValueError(f"Relief geometry validation failed: {first.message} {first.recommendation or ''}".strip())
+        raise ValueError(
+            f"Relief geometry validation failed: {first.message} {first.recommendation or ''}".strip()
+        )
     if validation.has_high_risk and not request.allow_risky:
         first = next(f for f in validation.findings if f.severity.value == "high")
         raise ValueError(
@@ -292,11 +319,19 @@ def _generate_relief(
         relief_spec,
         render_stl=request.render_stl,
     )
-    closure = validate_exported_stl_closure(outputs.get("male_stl"), outputs.get("female_stl"), spec)
-    validation = merge_validation_reports(validation, closure, override_used=request.allow_risky)
+    outputs.update(derived_outputs)
+
+    closure = validate_exported_stl_closure(
+        outputs.get("male_stl"), outputs.get("female_stl"), spec
+    )
+    validation = merge_validation_reports(
+        validation, closure, override_used=request.allow_risky
+    )
     if request.enforce_mating and validation.blocking_findings:
         first = validation.blocking_findings[0]
-        raise ValueError(f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip())
+        raise ValueError(
+            f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip()
+        )
 
     _write_generation_context(
         outputs["manifest"],
@@ -311,6 +346,7 @@ def _generate_relief(
         validation=validation,
         mating_estimate=None,
         relief_spec=relief_spec,
+        source_derivation=source_derivation,
     )
 
     return DieGenerationResult(
@@ -329,9 +365,17 @@ def _generate_relief(
     )
 
 
-def _validate_mode_interpretation(mode: ArtworkMode, interpretation: SourceInterpretation) -> None:
-    if mode == ArtworkMode.BINARY and interpretation == SourceInterpretation.HEIGHT_MAP:
-        raise ValueError("A literal height map requires --mode relief; choose flat-artwork for binary embossing.")
+def _validate_mode_interpretation(
+    mode: ArtworkMode, interpretation: SourceInterpretation
+) -> None:
+    if mode == ArtworkMode.BINARY and interpretation != SourceInterpretation.FLAT_ARTWORK:
+        raise ValueError(
+            "Binary embossing uses source interpretation 'flat-artwork'. Choose relief mode for height maps or shaded references."
+        )
+    if mode == ArtworkMode.RELIEF and interpretation == SourceInterpretation.FLAT_ARTWORK:
+        raise ValueError(
+            "Variable-depth relief requires a true height map or shaded-reference conversion."
+        )
 
 
 def _write_generation_context(
@@ -348,6 +392,7 @@ def _write_generation_context(
     validation: ValidationReport,
     mating_estimate: PrintablePairEstimate | None,
     relief_spec: ReliefSpec | None,
+    source_derivation: dict[str, object] | None,
 ) -> None:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     data["schema_version"] = 2
@@ -363,6 +408,8 @@ def _write_generation_context(
         "geometry_mode": mode.value,
         "source_interpretation": interpretation.value,
     }
+    if source_derivation is not None:
+        data["artwork_processing"]["source_derivation"] = source_derivation
     if mode == ArtworkMode.BINARY:
         data["relief"] = {"mode": "binary"}
     elif relief_spec is not None:
