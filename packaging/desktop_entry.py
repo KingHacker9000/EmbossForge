@@ -1,4 +1,4 @@
-from embossforge.gui import main
+from embossforge.gui_vnext import main
 
 
 if __name__ == "__main__":
