@@ -12,6 +12,7 @@ from .generator import DieGenerationRequest, generate_die
 from .mechanics import CartridgeSpec, PressSpec, export_mini_test_pack, export_press_pack
 from .mechanics.fit_coupon import export_fit_coupon
 from .micro_die import export_micro_butterfly_test
+from .relief import ArtworkMode, ReliefPolarity, ReliefSpec, ReliefStyle, SourceInterpretation
 from .scad_backend import find_openscad, render_scad
 
 
@@ -32,7 +33,52 @@ def build_parser() -> argparse.ArgumentParser:
     die.add_argument("--name", help="Output stem; defaults to the artwork filename")
     die.add_argument("--diameter", type=float, default=42.0, help="Die diameter in mm")
     die.add_argument("--base", type=float, default=3.0, help="Die base thickness in mm")
-    die.add_argument("--relief", type=float, default=0.65, help="Male relief height in mm")
+    die.add_argument("--relief", type=float, default=0.65, help="Binary relief height / relief-mode default max in mm")
+    die.add_argument("--mode", choices=[m.value for m in ArtworkMode], default="binary", help="binary or variable-depth relief")
+    die.add_argument(
+        "--source-interpretation",
+        choices=[s.value for s in SourceInterpretation],
+        default=None,
+        help="What uploaded pixels mean: flat-artwork, height-map, or shaded-reference",
+    )
+    die.add_argument("--relief-max", type=float, default=None, help="Maximum variable-depth relief in mm")
+    die.add_argument(
+        "--relief-style",
+        choices=[s.value for s in ReliefStyle],
+        default="stepped",
+        help="Variable-depth mapping style",
+    )
+    die.add_argument("--relief-levels", type=int, default=6, help="Number of levels for stepped relief")
+    die.add_argument("--relief-gamma", type=float, default=1.0, help="Relief tone response gamma")
+    die.add_argument(
+        "--relief-polarity",
+        choices=[p.value for p in ReliefPolarity],
+        default="dark-high",
+        help="Which grayscale direction maps to higher relief",
+    )
+    die.add_argument(
+        "--relief-zero-threshold",
+        type=float,
+        default=0.02,
+        help="Normalized low-relief dead zone from 0 to 1",
+    )
+    die.add_argument("--relief-smoothing", type=float, default=0.0, help="Relief smoothing radius in mm")
+    die.add_argument(
+        "--relief-quality",
+        choices=["draft", "balanced", "fine"],
+        default="balanced",
+        help="Height-field sampling quality",
+    )
+    die.add_argument(
+        "--keep-subresolution-relief",
+        action="store_true",
+        help="Do not remove positive relief below the selected printer's feature resolution",
+    )
+    die.add_argument(
+        "--allow-risky",
+        action="store_true",
+        help="Allow high experimental paper-risk findings; cannot bypass invalid/mating geometry",
+    )
     die.add_argument(
         "--clearance",
         type=float,
@@ -52,8 +98,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     die.add_argument("--extra-depth", type=float, default=0.20, help="Extra female cavity depth in mm")
     die.add_argument("--margin", type=float, default=3.0, help="Artwork margin from die edge in mm")
-    die.add_argument("--threshold", type=int, default=160, help="Raster threshold 0-255")
-    die.add_argument("--invert", action="store_true", help="Use for light artwork on a dark background")
+    die.add_argument("--threshold", type=int, default=160, help="Raster threshold 0-255 in binary mode")
+    die.add_argument("--invert", action="store_true", help="Use for light artwork on a dark background in binary mode")
     die.add_argument(
         "--profile",
         type=Path,
@@ -164,6 +210,20 @@ def _gui() -> int:
 
 def _die(args: argparse.Namespace) -> int:
     profile = PrinterProfile.from_toml(args.profile) if args.profile else None
+    relief_spec = None
+    if args.mode == ArtworkMode.RELIEF.value:
+        relief_spec = ReliefSpec(
+            max_relief_mm=args.relief_max if args.relief_max is not None else args.relief,
+            style=ReliefStyle(args.relief_style),
+            levels=args.relief_levels,
+            gamma=args.relief_gamma,
+            polarity=ReliefPolarity(args.relief_polarity),
+            zero_threshold=args.relief_zero_threshold,
+            smoothing_mm=args.relief_smoothing,
+            sampling_quality=args.relief_quality,
+            auto_filter_subresolution=not args.keep_subresolution_relief,
+        )
+
     request = DieGenerationRequest(
         artwork=args.artwork,
         output_root=args.out,
@@ -180,15 +240,26 @@ def _die(args: argparse.Namespace) -> int:
         invert=args.invert,
         render_stl=not args.scad_only,
         printer_profile=profile,
+        artwork_mode=ArtworkMode(args.mode),
+        source_interpretation=(
+            SourceInterpretation(args.source_interpretation) if args.source_interpretation else None
+        ),
+        relief=relief_spec,
+        allow_risky=args.allow_risky,
     )
     result = generate_die(request)
 
     print(f"Generated die pair: {result.name}")
+    print(f"  geometry mode: {result.artwork_mode.value}")
+    print(f"  source interpretation: {result.source_interpretation.value}")
     if result.printer_profile is not None:
         print(f"  printer profile: {result.printer_profile.name}")
     print(f"  paper thickness: {result.spec.paper_thickness_mm:.3f} mm ({result.paper_source})")
     print(f"  female clearance: {result.spec.female_xy_clearance_mm:.3f} mm ({result.clearance_source})")
-    print(f"  normalized artwork: {result.normalized_artwork}")
+    print(f"  validation: {result.validation.highest_severity.value} [{result.validation.verification_level}]")
+    for finding in result.validation.findings:
+        print(f"    {finding.severity.value}: {finding.message}")
+    print(f"  processed artwork: {result.normalized_artwork}")
     for key, path in result.outputs.items():
         print(f"  {key}: {path}")
     return 0
