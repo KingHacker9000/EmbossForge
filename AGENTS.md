@@ -29,6 +29,8 @@ The desktop app and CLI must use the **same generation backend**. Never duplicat
 - `profiles/` — human-editable printer profiles.
 - `tests/` — regression tests.
 - `docs/RELIEF_MODE_SPEC.md` — canonical accepted contract for planned grayscale/variable-depth relief work.
+- `docs/IMAGE_INPUT_SPEC.md` — canonical source-interpretation contract for flat artwork, true height maps, and shaded/3D-looking references.
+- `skills/embossforge-design/SKILL.md` — design skill for agents creating manufacturable EmbossForge artwork/height maps.
 - `docs/PHYSICAL_VALIDATION.md` — real printed validation record. Never infer physical validation from CAD/tests.
 - `packaging/` — desktop release entry points and installer definitions.
 - `.github/workflows/release-windows.yml` — self-contained Windows app/release build.
@@ -72,6 +74,73 @@ Critical invariants:
 
 If implementation choices conflict with the spec, update the spec intentionally in the same change and explain the compatibility impact. Do not silently diverge.
 
+## Raster/source interpretation contract
+
+Before adding automatic PNG/JPG interpretation, read **`docs/IMAGE_INPUT_SPEC.md`**.
+
+Geometry mode and source interpretation are separate concepts.
+
+Geometry modes:
+
+```text
+binary
+relief
+```
+
+Source interpretations:
+
+```text
+flat-artwork
+height-map
+shaded-reference
+```
+
+Critical invariants:
+
+- A metallic/shaded/3D-looking render is **not** automatically a height map.
+- Do not map highlights, cast shadows, specular reflections, or ambient-occlusion shading directly to Z unless the user explicitly chooses literal height-map interpretation.
+- Image detection may recommend an interpretation but must never silently change geometry semantics.
+- `shaded-reference` conversion means synthesizing a manufacturable derived height map, not claiming to reconstruct true 3D depth from one image.
+- Derived height maps must be preserved as inspectable output/provenance.
+- A user-authored true height map must not be silently flattened through shaded-reference conversion.
+- UI, CLI, and Python API must share the same source-interpretation enum and backend.
+
+For ornate AI-generated medallion artwork, prefer an explicit machine height map over trying to use the pretty rendered image directly.
+
+## Artwork-generation skill for agents
+
+When an agent is asked to **create, redesign, simplify, or convert artwork for EmbossForge**, read:
+
+```text
+skills/embossforge-design/SKILL.md
+```
+
+The core rule is:
+
+> Generate machine geometry artwork separately from presentation artwork.
+
+For variable-depth designs, the preferred output pair is:
+
+```text
+<name>_heightmap.png   # machine input: unlit, orthographic grayscale
+<name>_preview.png     # optional attractive visualization
+```
+
+Do not provide a metallic/shaded preview as the only file and label it a height map.
+
+The skill defines:
+
+- physical-scale feature guidance;
+- current AD5M / 0.4 mm profile minima;
+- white-zero / dark-high height-map convention;
+- circular composition guidance;
+- butterfly/floral/monogram hierarchy;
+- relief-level design guidance;
+- text/monogram rules;
+- paper-friendly geometry heuristics;
+- shaded-reference conversion rules;
+- a reusable image-generation prompt template.
+
 ## Target reference hardware
 
 - FlashForge Adventurer 5M
@@ -108,18 +177,26 @@ Then inspect generated assembly metadata/collision validation. A visual Blender 
 
 For future relief-mode changes, additionally satisfy the testing contract in `docs/RELIEF_MODE_SPEC.md`, including binary backward-compatibility, tone mapping, male/female pairing, risk-report behavior, and manifest schema coverage.
 
+For source-interpretation changes, test at minimum:
+
+- a near-binary PNG;
+- a true authored height map;
+- a shaded metallic/bas-relief reference;
+- a white-background ornate design with high detail density;
+- behavior when detection disagrees with an explicit user choice.
+
 ## Desktop UI rules
 
 The desktop app should remain intentionally simple:
 
-- one obvious artwork drop/select surface
-- a preview
-- common settings visible
-- advanced settings secondary/collapsible
-- one primary `Generate matched die pair` action
-- clear success/error state
-- direct `Open output folder` action
-- no CAD vocabulary unless it is genuinely necessary to the user
+- one obvious artwork drop/select surface;
+- a preview;
+- common settings visible;
+- advanced settings secondary/collapsible;
+- one primary `Generate matched die pair` action;
+- clear success/error state;
+- direct `Open output folder` action;
+- no CAD vocabulary unless it is genuinely necessary to the user.
 
 For future variable-depth relief:
 
@@ -129,6 +206,16 @@ For future variable-depth relief:
 - keep gamma/threshold/sampling controls behind a secondary disclosure;
 - summarize warnings in plain language near Generate;
 - do not call a design "safe" merely because no heuristic warning fired.
+
+For ambiguous shaded uploads, prefer a small interpretation card rather than another dense settings panel:
+
+```text
+Simple artwork
+Convert 3D-looking artwork to relief
+Treat grayscale as exact height
+```
+
+If the app thinks the image is shaded, explain why literal grayscale can be misleading. Recommendation is advisory; the user chooses.
 
 Do not make users install developer dependencies when using official binary releases. Official Windows bundles should include the OpenSCAD runtime needed for current STL generation.
 
@@ -158,13 +245,15 @@ Conserve expensive GUI/computer-use/3D-agent runs. Ordinary code, docs, tests, m
 
 Use a high-cost 3D/computer-use agent only when the task genuinely needs the user's local graphical environment, for example:
 
-- visually inspect generated press assemblies in Blender/FreeCAD
-- test moving mechanisms or ergonomics
-- inspect complex artistic geometry
-- validate slicer behavior or local printer workflow
-- diagnose a problem that cannot be resolved from source geometry/tests/renders
+- visually inspect generated press assemblies in Blender/FreeCAD;
+- test moving mechanisms or ergonomics;
+- inspect complex artistic geometry;
+- validate slicer behavior or local printer workflow;
+- diagnose a problem that cannot be resolved from source geometry/tests/renders.
 
-When invoking such an agent, keep the task narrow:
+Image-generation agents may be valuable for **authoring machine height maps**, but they must follow `skills/embossforge-design/SKILL.md`. A pretty render is not dimensional source data.
+
+When invoking a high-cost local 3D agent, keep the task narrow:
 
 `inspect -> identify concrete issue -> minimal source correction -> regenerate -> verify`
 
@@ -183,3 +272,5 @@ Check the relevant subset of:
 7. Release changes preserve a path for non-developer users to run the app without manual Python/OpenSCAD setup.
 8. Relief-mode work preserves binary behavior and follows `docs/RELIEF_MODE_SPEC.md`.
 9. Risk warnings and overrides are recorded in manifests; impossible geometry is never bypassed by `allow-risky` behavior.
+10. Raster/source interpretation follows `docs/IMAGE_INPUT_SPEC.md` and never silently confuses a shaded render with a true height map.
+11. Artwork-generating agents follow `skills/embossforge-design/SKILL.md` and separate machine maps from preview renders.
