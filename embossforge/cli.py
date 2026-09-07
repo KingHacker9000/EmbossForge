@@ -12,6 +12,7 @@ from .calibration import write_calibration_pack
 from .config import DieSpec
 from .mechanics import CartridgeSpec, PressSpec, export_mini_test_pack, export_press_pack
 from .mechanics.fit_coupon import export_fit_coupon
+from .micro_die import export_micro_butterfly_test
 from .scad_backend import find_openscad, generate_die_pair, render_scad
 
 
@@ -76,6 +77,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.25,
         help="Per-side cartridge/receiver clearance in mm",
     )
+
+    butterfly = sub.add_parser(
+        "butterfly-test",
+        help="Generate an ultra-small real male/female butterfly emboss die pair",
+    )
+    butterfly.add_argument(
+        "--out",
+        type=Path,
+        default=Path("build") / "butterfly-test",
+        help="Output directory",
+    )
+    butterfly.add_argument(
+        "--paper-thickness",
+        type=float,
+        default=0.10,
+        help="Paper thickness in mm used to size the female cavity",
+    )
     return parser
 
 
@@ -94,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
             return _mini_test(args)
         if args.command == "fit-coupon":
             return _fit_coupon(args)
+        if args.command == "butterfly-test":
+            return _butterfly_test(args)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -209,6 +229,22 @@ def _fit_coupon(args: argparse.Namespace) -> int:
     print(f"  manifest: {outputs['manifest']}")
     print(f"  solid PLA mass upper bound: {outputs['solid_pla_mass_upper_bound_g']:.2f} g")
     print("  IMPORTANT: trust FlashPrint's sliced filament estimate before printing")
+    return 0
+
+
+def _butterfly_test(args: argparse.Namespace) -> int:
+    outputs = export_micro_butterfly_test(
+        args.out,
+        paper_thickness_mm=args.paper_thickness,
+    )
+    print("Generated micro butterfly male/female emboss test")
+    print("  die diameter: 16 mm")
+    print(f"  male STL: {outputs['male_stl']}")
+    print(f"  female STL: {outputs['female_stl']}")
+    print(f"  artwork: {outputs['artwork']}")
+    print(f"  manifest: {outputs['test_manifest']}")
+    print(f"  conservative solid pair mass upper bound: {outputs['solid_pair_mass_upper_bound_g']} g")
+    print("  IMPORTANT: slice both at 100% scale and trust FlashPrint's estimate before printing")
     return 0
 
 
