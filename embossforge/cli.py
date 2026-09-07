@@ -9,7 +9,13 @@ from . import __version__
 from .calibration import write_calibration_pack
 from .config import PAPER_PRESETS_MM, PrinterProfile
 from .generator import DieGenerationRequest, generate_die
-from .mechanics import CartridgeSpec, PressSpec, export_mini_test_pack, export_press_pack
+from .mechanics import (
+    CartridgeSpec,
+    PressSpec,
+    export_micro_press_pack,
+    export_mini_test_pack,
+    export_press_pack,
+)
 from .mechanics.fit_coupon import export_fit_coupon
 from .micro_die import export_micro_butterfly_test
 from .relief import ArtworkMode, ReliefPolarity, ReliefSpec, ReliefStyle, SourceInterpretation
@@ -125,6 +131,19 @@ def build_parser() -> argparse.ArgumentParser:
     mini.add_argument("--slide-clearance", type=float, default=0.25, help="Per-side receiver clearance in mm")
     mini.add_argument("--paper-thickness", type=float, default=0.10, help="Paper thickness in mm")
 
+    micro = sub.add_parser(
+        "micro-press",
+        help="Generate the tiny lever press made specifically for the 16 mm butterfly-test dies",
+    )
+    micro.add_argument("--out", type=Path, default=Path("build") / "micro-press", help="Output directory")
+    micro.add_argument("--slide-clearance", type=float, default=0.25, help="Per-side cartridge/receiver clearance in mm")
+    micro.add_argument(
+        "--die-clearance",
+        type=float,
+        default=0.18,
+        help="Per-side clearance around the already-printed 16 mm butterfly die in mm",
+    )
+
     fit = sub.add_parser(
         "fit-coupon",
         help="Generate an ultra-small two-piece rail/receiver fit test for scarce filament",
@@ -156,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
             return _mechanics(args)
         if args.command == "mini-test":
             return _mini_test(args)
+        if args.command == "micro-press":
+            return _micro_press(args)
         if args.command == "fit-coupon":
             return _fit_coupon(args)
         if args.command == "butterfly-test":
@@ -304,6 +325,22 @@ def _mini_test(args: argparse.Namespace) -> int:
     )
     print("Generated low-filament miniature functional test pack")
     print("  NOTE: this is for fit/motion/light-emboss validation, not full-strength testing")
+    for key, path in outputs.items():
+        print(f"  {key}: {path}")
+    return 0
+
+
+def _micro_press(args: argparse.Namespace) -> int:
+    outputs = export_micro_press_pack(
+        args.out,
+        slide_clearance_mm=args.slide_clearance,
+        die_pocket_clearance_mm=args.die_clearance,
+    )
+    print("Generated Micro Embosser for the existing 16 mm butterfly-test die pair")
+    print("  die compatibility: exact butterfly-test diameter/base/key contract")
+    print("  hardware: 2 x 3 mm guide rods, M3-class main pivot, M2.5-class roller pin")
+    print("  NOTE: low-force alignment/emboss validation only; not a strength test")
+    print("  IMPORTANT: print one cartridge first and verify the already-printed butterfly die fit")
     for key, path in outputs.items():
         print(f"  {key}: {path}")
     return 0
