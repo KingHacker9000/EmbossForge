@@ -123,3 +123,20 @@ class PrinterProfile:
             raise ValueError(
                 f"Die diameter {spec.diameter_mm:.2f} mm exceeds printer X build size {self.build_x_mm:.2f} mm"
             )
+
+
+def adventurer_5m_profile() -> PrinterProfile:
+    """Return the built-in profile used by the desktop app and quick-start CLI paths."""
+    profile = PrinterProfile(
+        name="FlashForge Adventurer 5M / 0.4 mm prototype",
+        build_x_mm=220.0,
+        build_y_mm=220.0,
+        build_z_mm=220.0,
+        nozzle_mm=0.4,
+        layer_height_mm=0.12,
+        min_feature_mm=0.50,
+        min_gap_mm=0.45,
+        recommended_die_clearance_mm=0.20,
+    )
+    profile.validate()
+    return profile
