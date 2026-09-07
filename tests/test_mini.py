@@ -1,4 +1,4 @@
-from embossforge.mechanics import mechanical_layout
+from embossforge.mechanics import mechanical_layout, validate_assembly_clearance
 from embossforge.mechanics.mini import mini_cartridge_spec, mini_die_spec, mini_press_spec
 from embossforge.mechanics.spec import CartridgeSpec, PressSpec
 
@@ -36,3 +36,8 @@ def test_mini_kinematics_have_valid_open_and_closed_states():
     assert layout["lever_open_angle_deg"] > 0
     assert layout["guide_rod_length"] > 0
     assert press.nominal_lever_ratio > 4
+
+
+def test_mini_open_and_closed_assemblies_have_no_unintended_collisions():
+    report = validate_assembly_clearance(mini_cartridge_spec(), mini_press_spec())
+    assert report == {"open": [], "closed": []}
