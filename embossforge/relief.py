@@ -57,6 +57,7 @@ class ReliefSpec:
     zero_threshold: float = 0.02
     smoothing_mm: float = 0.0
     sampling_quality: str = "balanced"
+    auto_filter_subresolution: bool = True
 
     def validate(self) -> None:
         if self.max_relief_mm <= 0:
