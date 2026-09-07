@@ -30,6 +30,8 @@ The project is currently pre-1.0. Interfaces, dimensions, and generated geometry
 - micro butterfly matched-die smoke test
 - GitHub Actions CI
 - contribution and physical-validation documentation
+- accepted `docs/RELIEF_MODE_SPEC.md` architecture for opt-in grayscale/variable-depth embossing, including backward compatibility, height-map semantics, manifest schema v2 planning, desktop/CLI/API behavior, structured risk warnings, explicit expert override, and staged physical validation
+- grayscale-relief planning integrated into README, artwork guidance, desktop documentation, agent/API documentation, and `AGENTS.md`
 
 ### Fixed
 
