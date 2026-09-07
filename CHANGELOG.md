@@ -32,6 +32,9 @@ The project is currently pre-1.0. Interfaces, dimensions, and generated geometry
 - contribution and physical-validation documentation
 - accepted `docs/RELIEF_MODE_SPEC.md` architecture for opt-in grayscale/variable-depth embossing, including backward compatibility, height-map semantics, manifest schema v2 planning, desktop/CLI/API behavior, structured risk warnings, explicit expert override, and staged physical validation
 - grayscale-relief planning integrated into README, artwork guidance, desktop documentation, agent/API documentation, and `AGENTS.md`
+- accepted `docs/IMAGE_INPUT_SPEC.md` contract separating flat artwork, true height maps, and shaded/3D-looking reference images so rendered lighting is never silently interpreted as geometry
+- planned `shaded-reference` workflow for deriving a printer-aware inspectable height map from ornate AI/rendered medallion artwork before STL generation
+- `skills/embossforge-design/SKILL.md` for image-capable LLM agents, covering machine height-map conventions, physical feature sizing, circular seal composition, butterfly/floral/monogram design, relief hierarchy, shaded-reference conversion, and separation of pretty preview renders from machine geometry
 
 ### Fixed
 
