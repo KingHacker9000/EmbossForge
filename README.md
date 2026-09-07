@@ -22,6 +22,7 @@ Current capabilities:
 - STEP + STL mechanical exports
 - generated hardware/assembly manifest
 - automatic open/closed CadQuery collision checks
+- low-filament miniature functional test pack
 - Blender assembly loader for visual QA without rebuilding the model by hand
 
 **Important:** outputs generated before the keyed-carrier update should be regenerated before printing. The current die interface and female orientation logic are different from the earliest V0.1 prototype files.
@@ -128,6 +129,39 @@ All unique printable parts are designed to fit individually inside the FlashForg
 
 The exact hardware lengths are written into `mechanics_manifest.json` from the same dimensional model, so the manifest—not this README—is the source to use when buying/cutting hardware.
 
+## Low-filament miniature functional test
+
+If filament is scarce, do **not** print the full V0.2 press first. Generate the dedicated miniature test article:
+
+```powershell
+embossforge mini-test
+```
+
+This writes `build/mini-test/` containing a much smaller version of the same press architecture plus a simple 24 mm matched die pair.
+
+The mini article is intentionally **not** a uniform scale. Large dimensions are reduced aggressively while printer-sensitive clearances stay at realistic absolute values. This makes it useful for checking:
+
+- cartridge insertion/removal
+- receiver slide fit
+- keyed die seating
+- upper/lower alignment
+- platen travel
+- lever/roller motion
+- hard-stop behavior
+- light embossing on paper
+
+The current mini geometry uses an 84 × 92 × 7 mm base, a 115 mm lever, 24 mm dies, two 5 mm guide rods, an approximately 4 mm main pivot, and an approximately 3 mm roller pin. It is a low-force throwaway geometry test, **not** a strength test for the final press.
+
+To minimize waste, print in this order:
+
+1. `cartridge.stl` + `receiver.stl` only and verify sliding fit.
+2. `mini_test_male.stl` + `mini_test_female.stl` and verify die seating/light embossing.
+3. Only then print the remaining miniature press parts.
+
+A starting-point low-filament slicer setup is 0.20 mm layers, 2 walls, 3 top/bottom layers and about 8% infill. Check the slicer's actual gram estimate before starting; increase walls/infill only if the throwaway model is too flexible.
+
+`mini_test_manifest.json` records the exact miniature dimensions and clearly identifies the clearances that were deliberately left unscaled.
+
 ## Optional Blender visual QA
 
 After generating the mechanical pack, Blender can load the source-generated assembly directly:
@@ -164,12 +198,14 @@ Primary development printer:
 - [x] STEP/STL export
 - [x] generated assembly metadata
 - [x] open/closed solid collision checks
+- [x] low-filament miniature functional test generator
 - [x] Blender assembly loader
 - [ ] print calibration coupons
 - [ ] tune AD5M 0.4 mm clearances from physical measurements
 - [ ] print first cartridge/receiver pair
+- [ ] print miniature functional press and verify motion/light embossing
 - [ ] visually inspect generated assembly in Blender/local CAD
-- [ ] print and physically validate the press at low force
+- [ ] print and physically validate the full press at low force
 
 ### V0.3 — artwork intelligence
 
