@@ -6,7 +6,7 @@
 
 Turn SVGs and images into a coordinated **male + female 3D-printable embossing die pair** without hand-building CAD geometry.
 
-[Project website](https://kinghacker9000.github.io/EmbossForge/) · [Releases](https://github.com/KingHacker9000/EmbossForge/releases) · [Desktop guide](docs/DESKTOP_APP.md) · [First print](docs/FIRST_PRINT.md) · [Agent guide](AGENTS.md)
+[Project website](https://kinghacker9000.github.io/EmbossForge/) · [Releases](https://github.com/KingHacker9000/EmbossForge/releases) · [Desktop guide](docs/DESKTOP_APP.md) · [First print](docs/FIRST_PRINT.md) · [Variable-depth relief spec](docs/RELIEF_MODE_SPEC.md) · [Agent guide](AGENTS.md)
 
 [![CI](https://github.com/KingHacker9000/EmbossForge/actions/workflows/ci.yml/badge.svg)](https://github.com/KingHacker9000/EmbossForge/actions/workflows/ci.yml)
 [![Windows Release](https://github.com/KingHacker9000/EmbossForge/actions/workflows/release-windows.yml/badge.svg)](https://github.com/KingHacker9000/EmbossForge/actions/workflows/release-windows.yml)
@@ -119,6 +119,26 @@ The reusable cartridge and press are still prototype hardware and require contin
 - Windows installer + portable packaging workflow
 - GitHub Pages project website
 - shared CLI/Python backend for automation and LLM agents
+
+---
+
+## vNext: variable-depth grayscale relief
+
+Current production behavior is intentionally **binary**: artwork either embosses at one relief height or remains flat. The next major artwork-engine extension is designed to use grayscale as a real height field.
+
+That enables designs such as:
+
+- a strong outer ring and softer inner ring;
+- layered emblems with several emboss depths;
+- stepped or continuous relief;
+- shallow textures and radial patterns;
+- intentionally aggressive relief when a user accepts paper-damage risk.
+
+The feature is designed to be additive: **binary remains the default and existing commands keep their behavior**. Relief mode will be opt-in, printer-aware, reproducible, and accompanied by advisory printability/paper-risk analysis. Risk warnings may be overridden; impossible geometry such as a female cavity breaking through its base remains a hard error.
+
+The accepted architecture, CLI/API contract, manifest schema v2 plan, desktop UX, validation model, and staged rollout are documented in **[docs/RELIEF_MODE_SPEC.md](docs/RELIEF_MODE_SPEC.md)**.
+
+This section describes planned behavior, not a feature that is already physically validated.
 
 ---
 
@@ -235,11 +255,13 @@ The current mechanical pack includes:
 | Tool | Responsibility |
 | --- | --- |
 | Python | desktop UI, CLI, preprocessing, validation, orchestration |
-| OpenSCAD | deterministic artwork relief and calibration geometry |
+| OpenSCAD | deterministic binary artwork relief and calibration geometry |
 | CadQuery | parametric mechanical CAD and STEP/STL export |
 | Blender | visual QA, assembly inspection, presentation |
 
 Blender is useful for inspection and presentation, but it is **not** the dimensional source of truth.
+
+Variable-depth relief may add a dedicated deterministic height-map/mesh backend if OpenSCAD is not efficient enough for dense relief surfaces. That does not change the binary-mode source-of-truth rules.
 
 ---
 
@@ -272,6 +294,22 @@ Printer-sensitive tolerances are measured calibration values, not universal cons
 - [ ] generated 3D die preview
 - [ ] macOS and Linux desktop packages
 
+### Variable-depth relief
+
+- [x] architecture/specification and backward-compatibility contract
+- [ ] manifest schema v2 + relief request model
+- [ ] deterministic grayscale/SVG height-map renderer
+- [ ] stepped and continuous tone-to-height mapping
+- [ ] matched variable-height male/female backend
+- [ ] structured printability + paper-risk report
+- [ ] explicit expert risk override
+- [ ] desktop relief preview and guided controls
+- [ ] CLI/API relief options
+- [ ] tiny stepped-depth and ring physical calibration coupons
+- [ ] radial profiles and texture-composition layers
+
+See [docs/RELIEF_MODE_SPEC.md](docs/RELIEF_MODE_SPEC.md) for the canonical contract.
+
 ### Hardware validation
 
 - [x] matched die generation
@@ -294,6 +332,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) first.
 Useful contributions include:
 
 - difficult SVG/raster artwork examples
+- grayscale relief test patterns
 - measured printer tolerances
 - physical print/emboss test results
 - UI/UX improvements
@@ -303,6 +342,8 @@ Useful contributions include:
 ## Safety
 
 The press is prototype hardware. Printed plastic can fail suddenly under load. Keep fingers away from the die gap, begin at low force, inspect pivots and stops before use, and wear eye protection during early mechanical testing.
+
+Future variable-depth relief warnings are intended as experimental design heuristics, not guarantees that paper will not tear or puncture.
 
 ## License
 
