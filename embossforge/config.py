@@ -5,6 +5,21 @@ from pathlib import Path
 import tomllib
 
 
+PAPER_PRESETS_MM: dict[str, float] = {
+    "copy": 0.10,
+    "premium": 0.13,
+    "cardstock": 0.25,
+}
+
+
+def paper_thickness_for_preset(name: str) -> float:
+    try:
+        return PAPER_PRESETS_MM[name]
+    except KeyError as exc:
+        choices = ", ".join(sorted(PAPER_PRESETS_MM))
+        raise ValueError(f"Unknown paper preset {name!r}; choose one of: {choices}") from exc
+
+
 @dataclass(frozen=True)
 class DieSpec:
     diameter_mm: float = 42.0
@@ -87,4 +102,24 @@ class PrinterProfile:
     def from_toml(cls, path: str | Path) -> "PrinterProfile":
         with Path(path).open("rb") as fh:
             data = tomllib.load(fh)
-        return cls(**data["printer"])
+        profile = cls(**data["printer"])
+        profile.validate()
+        return profile
+
+    def validate(self) -> None:
+        for name, value in asdict(self).items():
+            if name == "name":
+                continue
+            if float(value) <= 0:
+                raise ValueError(f"Printer profile {name} must be > 0")
+
+    def validate_die(self, spec: DieSpec) -> None:
+        spec.validate()
+        if spec.carrier_depth_mm > self.build_y_mm:
+            raise ValueError(
+                f"Die carrier depth {spec.carrier_depth_mm:.2f} mm exceeds printer Y build size {self.build_y_mm:.2f} mm"
+            )
+        if spec.diameter_mm > self.build_x_mm:
+            raise ValueError(
+                f"Die diameter {spec.diameter_mm:.2f} mm exceeds printer X build size {self.build_x_mm:.2f} mm"
+            )
