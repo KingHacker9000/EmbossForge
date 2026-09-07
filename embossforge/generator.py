@@ -182,7 +182,15 @@ def _generate_binary(
     interpretation: SourceInterpretation,
 ) -> DieGenerationResult:
     normalized = out / f"{name}_normalized.svg"
-    normalize_artwork(artwork, normalized, threshold=request.threshold, invert=request.invert)
+    normalize_artwork(
+        artwork,
+        normalized,
+        threshold=request.threshold,
+        invert=request.invert,
+        physical_artwork_box_mm=spec.artwork_box_mm if profile is not None else None,
+        min_feature_mm=profile.min_feature_mm if profile is not None else None,
+        min_gap_mm=profile.effective_min_negative_feature_mm if profile is not None else None,
+    )
 
     preflight, estimate = validate_printable_pair(normalized, spec, profile)
     if request.enforce_mating and preflight.blocking_findings:
