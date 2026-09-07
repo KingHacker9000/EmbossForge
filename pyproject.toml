@@ -14,6 +14,7 @@ keywords = ["3d-printing", "embossing", "cad", "cadquery", "openscad", "maker"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
+  "Environment :: Win32 (MS Windows)",
   "Intended Audience :: Developers",
   "Intended Audience :: Manufacturing",
   "License :: OSI Approved :: MIT License",
@@ -29,10 +30,19 @@ dependencies = [
 
 [project.optional-dependencies]
 cad = ["cadquery>=2.4"]
+gui = ["PySide6>=6.8,<7"]
 dev = ["pytest>=8"]
+release = [
+  "cadquery>=2.4",
+  "PySide6>=6.8,<7",
+  "pyinstaller>=6.12",
+]
 
 [project.scripts]
 embossforge = "embossforge.cli:main"
+
+[project.gui-scripts]
+embossforge-gui = "embossforge.gui:main"
 
 [project.urls]
 Homepage = "https://github.com/KingHacker9000/EmbossForge"
