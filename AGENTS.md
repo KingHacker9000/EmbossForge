@@ -30,6 +30,7 @@ The desktop app and CLI must use the **same generation backend**. Never duplicat
 - `tests/` — regression tests.
 - `docs/RELIEF_MODE_SPEC.md` — canonical accepted contract for planned grayscale/variable-depth relief work.
 - `docs/IMAGE_INPUT_SPEC.md` — canonical source-interpretation contract for flat artwork, true height maps, and shaded/3D-looking references.
+- `docs/MATING_VALIDATION_SPEC.md` — canonical cross-cutting contract for printer-aware positive/negative feature preservation and predicted die closure.
 - `skills/embossforge-design/SKILL.md` — design skill for agents creating manufacturable EmbossForge artwork/height maps.
 - `docs/PHYSICAL_VALIDATION.md` — real printed validation record. Never infer physical validation from CAD/tests.
 - `packaging/` — desktop release entry points and installer definitions.
@@ -49,6 +50,10 @@ The desktop app and CLI must use the **same generation backend**. Never duplicat
 - Units are millimetres unless explicitly stated otherwise.
 - Male and female dies are a matched pair. Any orientation/clearance change must preserve mating geometry.
 - The female die is intentionally not an exact negative: paper thickness, XY clearance, and extra cavity depth matter.
+- **Ideal CAD pairing is insufficient.** A valid pair must also remain compatible after printer/nozzle-aware canonicalization; read `docs/MATING_VALIDATION_SPEC.md`.
+- Never independently simplify/filter male and female artwork. Build one printer-aware canonical target, then derive both sides from it.
+- A retained positive feature may not survive if its matching negative groove is below the selected profile's printable-gap limit. Such one-sided feature loss is a compatibility failure.
+- Predicted die-to-die interference at nominal closure is a hard error, not an `allow-risky` warning.
 - Keyed carriers must remain rotationally deterministic.
 - A shared cartridge-interface change must update all compatible parts and tests.
 - Printer-sensitive clearances stay explicit parameters; never hide them in arbitrary mesh edits.
@@ -66,6 +71,7 @@ Critical invariants:
 - Grayscale semantics, gamma, stepping, polarity, and all paper/printer accommodations belong in shared backend data models, not UI code.
 - CLI, GUI, and Python API must build the same relief request/specification and call the same generator.
 - The female relief field must derive from the same male source field plus explicit clearance/paper/depth accommodations and the established cartridge orientation transform.
+- Relief-mode geometry must also satisfy `docs/MATING_VALIDATION_SPEC.md` at every relevant height/cross-section; a cavity that disappears at printer resolution while the opposing ridge remains is invalid.
 - Paper-risk analysis is heuristic and warning-oriented. `caution`/`high` paper-risk findings are overrideable; impossible geometry is not.
 - A user override must be explicit and recorded in the generated manifest.
 - Missing manifest `schema_version` means v1. New relief work may introduce schema v2 only by preserving existing top-level manifest fields documented in the relief spec.
@@ -138,6 +144,7 @@ The skill defines:
 - relief-level design guidance;
 - text/monogram rules;
 - paper-friendly geometry heuristics;
+- paired positive/negative manufacturability guidance;
 - shaded-reference conversion rules;
 - a reusable image-generation prompt template.
 
@@ -185,6 +192,16 @@ For source-interpretation changes, test at minimum:
 - a white-background ornate design with high detail density;
 - behavior when detection disagrees with an explicit user choice.
 
+For matched-die geometry changes, also satisfy `docs/MATING_VALIDATION_SPEC.md`, including at minimum:
+
+- a thin positive line whose matching negative groove would otherwise disappear;
+- consistent paired widening/removal;
+- tiny text counters;
+- close parallel ridges / merged negative cavities;
+- orientation/mirror mismatch;
+- selected nozzle/profile changing whether a feature is valid;
+- `allow-risky` proving unable to bypass mating incompatibility.
+
 ## Desktop UI rules
 
 The desktop app should remain intentionally simple:
@@ -216,6 +233,8 @@ Treat grayscale as exact height
 ```
 
 If the app thinks the image is shaded, explain why literal grayscale can be misleading. Recommendation is advisory; the user chooses.
+
+For fit validation, surface a specific **Die fit check** result rather than hiding incompatible geometry behind a generic detail warning. If a male feature would survive while its female cavity would disappear at the selected nozzle/profile, generation must stop or repair the pair consistently.
 
 Do not make users install developer dependencies when using official binary releases. Official Windows bundles should include the OpenSCAD runtime needed for current STL generation.
 
@@ -274,3 +293,4 @@ Check the relevant subset of:
 9. Risk warnings and overrides are recorded in manifests; impossible geometry is never bypassed by `allow-risky` behavior.
 10. Raster/source interpretation follows `docs/IMAGE_INPUT_SPEC.md` and never silently confuses a shaded render with a true height map.
 11. Artwork-generating agents follow `skills/embossforge-design/SKILL.md` and separate machine maps from preview renders.
+12. Any generated die pair passes printer-aware mating/closure validation according to `docs/MATING_VALIDATION_SPEC.md`; ideal CAD overlap checks alone are insufficient.
