@@ -14,7 +14,7 @@ from .config import (
     paper_thickness_for_preset,
 )
 from .heightmap import build_female_surface_map, build_height_map
-from .mating import PrintablePairEstimate, validate_printable_pair
+from .mating import PrintablePairEstimate, validate_exported_stl_closure, validate_printable_pair
 from .relief import (
     ArtworkMode,
     ReliefSpec,
@@ -82,7 +82,6 @@ class DieGenerationResult:
 
 
 def safe_design_name(value: str) -> str:
-    """Return a cross-platform safe output stem while retaining human readability."""
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", value.strip())
     name = re.sub(r"\s+", " ", name).strip(" .")
     if not name:
@@ -158,7 +157,6 @@ def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
             clearance_source,
             interpretation,
         )
-
     return _generate_relief(
         request,
         artwork,
@@ -186,12 +184,18 @@ def _generate_binary(
     normalized = out / f"{name}_normalized.svg"
     normalize_artwork(artwork, normalized, threshold=request.threshold, invert=request.invert)
 
-    mating_report, estimate = validate_printable_pair(normalized, spec, profile)
-    if request.enforce_mating and mating_report.blocking_findings:
-        first = mating_report.blocking_findings[0]
+    preflight, estimate = validate_printable_pair(normalized, spec, profile)
+    if request.enforce_mating and preflight.blocking_findings:
+        first = preflight.blocking_findings[0]
         raise ValueError(f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip())
 
     outputs = generate_die_pair(normalized, out, name, spec, render_stl=request.render_stl)
+    closure = validate_exported_stl_closure(outputs.get("male_stl"), outputs.get("female_stl"), spec)
+    validation = merge_validation_reports(preflight, closure)
+    if request.enforce_mating and validation.blocking_findings:
+        first = validation.blocking_findings[0]
+        raise ValueError(f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip())
+
     _write_generation_context(
         outputs["manifest"],
         original_artwork=artwork,
@@ -202,7 +206,7 @@ def _generate_binary(
         invert=request.invert,
         mode=ArtworkMode.BINARY,
         interpretation=interpretation,
-        validation=mating_report,
+        validation=validation,
         mating_estimate=estimate,
         relief_spec=None,
     )
@@ -217,7 +221,7 @@ def _generate_binary(
         outputs=outputs,
         artwork_mode=ArtworkMode.BINARY,
         source_interpretation=interpretation,
-        validation=mating_report,
+        validation=validation,
         mating_estimate=estimate,
     )
 
@@ -244,7 +248,6 @@ def _generate_relief(
 
     relief_spec = request.relief or ReliefSpec(max_relief_mm=request.relief_height_mm)
     relief_spec.validate()
-    # Keep legacy spec properties internally coherent with the variable-depth max.
     spec = replace(spec, relief_height_mm=relief_spec.max_relief_mm)
     spec.validate()
 
@@ -258,8 +261,8 @@ def _generate_relief(
         profile,
         override_used=request.allow_risky,
     )
-    mating_report = validate_heightfield_mating(heightmap, female_field, max_cavity, spec, relief_spec)
-    validation = merge_validation_reports(risk_report, mating_report, override_used=request.allow_risky)
+    field_mating = validate_heightfield_mating(heightmap, female_field, max_cavity, spec, relief_spec)
+    validation = merge_validation_reports(risk_report, field_mating, override_used=request.allow_risky)
 
     if validation.blocking_findings:
         first = validation.blocking_findings[0]
@@ -281,6 +284,12 @@ def _generate_relief(
         relief_spec,
         render_stl=request.render_stl,
     )
+    closure = validate_exported_stl_closure(outputs.get("male_stl"), outputs.get("female_stl"), spec)
+    validation = merge_validation_reports(validation, closure, override_used=request.allow_risky)
+    if request.enforce_mating and validation.blocking_findings:
+        first = validation.blocking_findings[0]
+        raise ValueError(f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip())
+
     _write_generation_context(
         outputs["manifest"],
         original_artwork=artwork,
@@ -365,7 +374,6 @@ def _write_generation_context(
 
 
 def default_gui_request(artwork: Path, output_root: Path) -> DieGenerationRequest:
-    """Create the friendly desktop defaults used for the target printer."""
     return DieGenerationRequest(
         artwork=artwork,
         output_root=output_root,
