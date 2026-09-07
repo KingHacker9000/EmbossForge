@@ -13,7 +13,20 @@ from .config import (
     adventurer_5m_profile,
     paper_thickness_for_preset,
 )
+from .heightmap import build_female_surface_map, build_height_map
+from .mating import PrintablePairEstimate, validate_printable_pair
+from .relief import (
+    ArtworkMode,
+    ReliefSpec,
+    SourceInterpretation,
+    ValidationReport,
+    coerce_artwork_mode,
+    coerce_source_interpretation,
+    default_source_interpretation,
+)
+from .relief_backend import generate_relief_die_pair
 from .scad_backend import generate_die_pair
+from .validation import merge_validation_reports, validate_heightfield_mating, validate_relief_field
 
 
 @dataclass(frozen=True)
@@ -33,6 +46,11 @@ class DieGenerationRequest:
     invert: bool = False
     render_stl: bool = True
     printer_profile: PrinterProfile | None = None
+    artwork_mode: ArtworkMode | str = ArtworkMode.BINARY
+    source_interpretation: SourceInterpretation | str | None = None
+    relief: ReliefSpec | None = None
+    allow_risky: bool = False
+    enforce_mating: bool = True
 
 
 @dataclass(frozen=True)
@@ -45,6 +63,10 @@ class DieGenerationResult:
     paper_source: str
     clearance_source: str
     outputs: dict[str, Path]
+    artwork_mode: ArtworkMode = ArtworkMode.BINARY
+    source_interpretation: SourceInterpretation = SourceInterpretation.FLAT_ARTWORK
+    validation: ValidationReport = ValidationReport()
+    mating_estimate: PrintablePairEstimate | None = None
 
     @property
     def male_stl(self) -> Path | None:
@@ -65,7 +87,6 @@ def safe_design_name(value: str) -> str:
     name = re.sub(r"\s+", " ", name).strip(" .")
     if not name:
         return "design"
-    # Keep Windows path lengths and generated suffixes comfortably manageable.
     return name[:80].rstrip(" .") or "design"
 
 
@@ -75,15 +96,17 @@ def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
     if not artwork.exists():
         raise FileNotFoundError(artwork)
 
+    mode = coerce_artwork_mode(request.artwork_mode)
+    interpretation = (
+        coerce_source_interpretation(request.source_interpretation)
+        if request.source_interpretation is not None
+        else default_source_interpretation(mode)
+    )
+    _validate_mode_interpretation(mode, interpretation)
+
     name = safe_design_name(request.name or artwork.stem)
     out = Path(request.output_root) / name
-    normalized = out / f"{name}_normalized.svg"
-    normalize_artwork(
-        artwork,
-        normalized,
-        threshold=request.threshold,
-        invert=request.invert,
-    )
+    out.mkdir(parents=True, exist_ok=True)
 
     base_spec = DieSpec()
     profile = request.printer_profile
@@ -108,11 +131,12 @@ def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
         clearance = base_spec.female_xy_clearance_mm
         clearance_source = "default"
 
+    effective_relief = request.relief.max_relief_mm if (mode == ArtworkMode.RELIEF and request.relief) else request.relief_height_mm
     spec = replace(
         base_spec,
         diameter_mm=request.diameter_mm,
         base_thickness_mm=request.base_thickness_mm,
-        relief_height_mm=request.relief_height_mm,
+        relief_height_mm=effective_relief,
         female_xy_clearance_mm=clearance,
         paper_thickness_mm=paper_thickness,
         female_extra_depth_mm=request.female_extra_depth_mm,
@@ -122,13 +146,52 @@ def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
     if profile is not None:
         profile.validate_die(spec)
 
-    outputs = generate_die_pair(
-        normalized,
+    if mode == ArtworkMode.BINARY:
+        return _generate_binary(
+            request,
+            artwork,
+            out,
+            name,
+            spec,
+            profile,
+            paper_source,
+            clearance_source,
+            interpretation,
+        )
+
+    return _generate_relief(
+        request,
+        artwork,
         out,
         name,
         spec,
-        render_stl=request.render_stl,
+        profile,
+        paper_source,
+        clearance_source,
+        interpretation,
     )
+
+
+def _generate_binary(
+    request: DieGenerationRequest,
+    artwork: Path,
+    out: Path,
+    name: str,
+    spec: DieSpec,
+    profile: PrinterProfile | None,
+    paper_source: str,
+    clearance_source: str,
+    interpretation: SourceInterpretation,
+) -> DieGenerationResult:
+    normalized = out / f"{name}_normalized.svg"
+    normalize_artwork(artwork, normalized, threshold=request.threshold, invert=request.invert)
+
+    mating_report, estimate = validate_printable_pair(normalized, spec, profile)
+    if request.enforce_mating and mating_report.blocking_findings:
+        first = mating_report.blocking_findings[0]
+        raise ValueError(f"Matched-die closure validation failed: {first.message} {first.recommendation or ''}".strip())
+
+    outputs = generate_die_pair(normalized, out, name, spec, render_stl=request.render_stl)
     _write_generation_context(
         outputs["manifest"],
         original_artwork=artwork,
@@ -137,6 +200,11 @@ def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
         clearance_source=clearance_source,
         threshold=request.threshold,
         invert=request.invert,
+        mode=ArtworkMode.BINARY,
+        interpretation=interpretation,
+        validation=mating_report,
+        mating_estimate=estimate,
+        relief_spec=None,
     )
     return DieGenerationResult(
         name=name,
@@ -147,7 +215,106 @@ def generate_die(request: DieGenerationRequest) -> DieGenerationResult:
         paper_source=paper_source,
         clearance_source=clearance_source,
         outputs=outputs,
+        artwork_mode=ArtworkMode.BINARY,
+        source_interpretation=interpretation,
+        validation=mating_report,
+        mating_estimate=estimate,
     )
+
+
+def _generate_relief(
+    request: DieGenerationRequest,
+    artwork: Path,
+    out: Path,
+    name: str,
+    spec: DieSpec,
+    profile: PrinterProfile | None,
+    paper_source: str,
+    clearance_source: str,
+    interpretation: SourceInterpretation,
+) -> DieGenerationResult:
+    if interpretation == SourceInterpretation.SHADED_REFERENCE:
+        raise ValueError(
+            "Automatic shaded-reference conversion is not enabled in the deterministic desktop backend yet. "
+            "Convert the reference to an unlit EmbossForge height map first (see skills/embossforge-design/SKILL.md), "
+            "then choose source interpretation 'height-map'."
+        )
+    if interpretation != SourceInterpretation.HEIGHT_MAP:
+        raise ValueError("Variable-depth relief currently requires source interpretation 'height-map'.")
+
+    relief_spec = request.relief or ReliefSpec(max_relief_mm=request.relief_height_mm)
+    relief_spec.validate()
+    # Keep legacy spec properties internally coherent with the variable-depth max.
+    spec = replace(spec, relief_height_mm=relief_spec.max_relief_mm)
+    spec.validate()
+
+    heightmap = build_height_map(artwork, out, name, spec, relief_spec, profile)
+    female_surface, max_cavity, female_field = build_female_surface_map(heightmap, out, name, spec, relief_spec)
+
+    risk_report = validate_relief_field(
+        heightmap,
+        spec,
+        relief_spec,
+        profile,
+        override_used=request.allow_risky,
+    )
+    mating_report = validate_heightfield_mating(heightmap, female_field, max_cavity, spec, relief_spec)
+    validation = merge_validation_reports(risk_report, mating_report, override_used=request.allow_risky)
+
+    if validation.blocking_findings:
+        first = validation.blocking_findings[0]
+        raise ValueError(f"Relief geometry validation failed: {first.message} {first.recommendation or ''}".strip())
+    if validation.has_high_risk and not request.allow_risky:
+        first = next(f for f in validation.findings if f.severity.value == "high")
+        raise ValueError(
+            f"Relief generation paused for a high experimental paper-risk finding: {first.message} "
+            "Review the design or generate again with allow_risky/--allow-risky if intentional."
+        )
+
+    outputs = generate_relief_die_pair(
+        heightmap,
+        female_surface,
+        max_cavity,
+        out,
+        name,
+        spec,
+        relief_spec,
+        render_stl=request.render_stl,
+    )
+    _write_generation_context(
+        outputs["manifest"],
+        original_artwork=artwork,
+        profile=profile,
+        paper_source=paper_source,
+        clearance_source=clearance_source,
+        threshold=request.threshold,
+        invert=request.invert,
+        mode=ArtworkMode.RELIEF,
+        interpretation=interpretation,
+        validation=validation,
+        mating_estimate=None,
+        relief_spec=relief_spec,
+    )
+
+    return DieGenerationResult(
+        name=name,
+        output_dir=out,
+        normalized_artwork=heightmap.machine_heightmap,
+        spec=spec,
+        printer_profile=profile,
+        paper_source=paper_source,
+        clearance_source=clearance_source,
+        outputs=outputs,
+        artwork_mode=ArtworkMode.RELIEF,
+        source_interpretation=interpretation,
+        validation=validation,
+        mating_estimate=None,
+    )
+
+
+def _validate_mode_interpretation(mode: ArtworkMode, interpretation: SourceInterpretation) -> None:
+    if mode == ArtworkMode.BINARY and interpretation == SourceInterpretation.HEIGHT_MAP:
+        raise ValueError("A literal height map requires --mode relief; choose flat-artwork for binary embossing.")
 
 
 def _write_generation_context(
@@ -159,8 +326,14 @@ def _write_generation_context(
     clearance_source: str,
     threshold: int,
     invert: bool,
+    mode: ArtworkMode,
+    interpretation: SourceInterpretation,
+    validation: ValidationReport,
+    mating_estimate: PrintablePairEstimate | None,
+    relief_spec: ReliefSpec | None,
 ) -> None:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
     data["generation_context"] = {
         "original_artwork": str(original_artwork.resolve()),
         "printer_profile": profile.name if profile else None,
@@ -169,6 +342,25 @@ def _write_generation_context(
         "raster_threshold": threshold,
         "raster_invert": invert,
     }
+    data["artwork_processing"] = {
+        "geometry_mode": mode.value,
+        "source_interpretation": interpretation.value,
+    }
+    if mode == ArtworkMode.BINARY:
+        data["relief"] = {"mode": "binary"}
+    elif relief_spec is not None:
+        existing_sampling = data.get("relief", {}).get("sampling")
+        data["relief"] = {"mode": "relief", **relief_spec.to_dict()}
+        if existing_sampling is not None:
+            data["relief"]["sampling"] = existing_sampling
+    data["validation"] = validation.to_dict()
+    if mating_estimate is not None:
+        data["validation"]["mating_preflight"] = {
+            "checked_features": mating_estimate.checked_features,
+            "unmeasured_features": mating_estimate.unmeasured_features,
+            "coverage": mating_estimate.coverage,
+            "source_kind": mating_estimate.source_kind,
+        }
     manifest_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
