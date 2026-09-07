@@ -1,32 +1,30 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import replace
 from pathlib import Path
 import shutil
 import sys
 
 from . import __version__
-from .artwork import normalize_artwork
 from .calibration import write_calibration_pack
-from .config import (
-    PAPER_PRESETS_MM,
-    DieSpec,
-    PrinterProfile,
-    paper_thickness_for_preset,
-)
+from .config import PAPER_PRESETS_MM, PrinterProfile
+from .generator import DieGenerationRequest, generate_die
 from .mechanics import CartridgeSpec, PressSpec, export_mini_test_pack, export_press_pack
 from .mechanics.fit_coupon import export_fit_coupon
 from .micro_die import export_micro_butterfly_test
-from .scad_backend import find_openscad, generate_die_pair, render_scad
+from .scad_backend import find_openscad, render_scad
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="embossforge", description="Generate printable embossing dies and press hardware")
+    parser = argparse.ArgumentParser(
+        prog="embossforge",
+        description="Generate printable embossing dies and press hardware",
+    )
     parser.add_argument("--version", action="version", version=f"EmbossForge {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("doctor", help="Check the local CAD/toolchain installation")
+    sub.add_parser("gui", help="Launch the desktop app")
 
     die = sub.add_parser("die", help="Generate a matched male/female die pair")
     die.add_argument("artwork", type=Path, help="SVG, PNG, JPG, BMP, TIFF, or WEBP artwork")
@@ -59,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     die.add_argument(
         "--profile",
         type=Path,
-        help="Printer TOML profile; supplies clearance defaults and validates the die against the build volume",
+        help="Printer TOML profile; supplies clearance defaults and validates build volume",
     )
     die.add_argument("--scad-only", action="store_true", help="Generate OpenSCAD source but do not render STL")
 
@@ -78,47 +76,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate a much smaller low-filament functional throwaway press + die pack",
     )
     mini.add_argument("--out", type=Path, default=Path("build") / "mini-test", help="Output directory")
-    mini.add_argument(
-        "--slide-clearance",
-        type=float,
-        default=0.25,
-        help="Cartridge/receiver per-side clearance in mm; deliberately not scaled down",
-    )
-    mini.add_argument(
-        "--paper-thickness",
-        type=float,
-        default=0.10,
-        help="Paper thickness used for the miniature matched die pair in mm",
-    )
+    mini.add_argument("--slide-clearance", type=float, default=0.25, help="Per-side receiver clearance in mm")
+    mini.add_argument("--paper-thickness", type=float, default=0.10, help="Paper thickness in mm")
 
     fit = sub.add_parser(
         "fit-coupon",
         help="Generate an ultra-small two-piece rail/receiver fit test for scarce filament",
     )
     fit.add_argument("--out", type=Path, default=Path("build") / "fit-coupon", help="Output directory")
-    fit.add_argument(
-        "--slide-clearance",
-        type=float,
-        default=0.25,
-        help="Per-side cartridge/receiver clearance in mm",
-    )
+    fit.add_argument("--slide-clearance", type=float, default=0.25, help="Per-side clearance in mm")
 
     butterfly = sub.add_parser(
         "butterfly-test",
         help="Generate an ultra-small real male/female butterfly emboss die pair",
     )
-    butterfly.add_argument(
-        "--out",
-        type=Path,
-        default=Path("build") / "butterfly-test",
-        help="Output directory",
-    )
-    butterfly.add_argument(
-        "--paper-thickness",
-        type=float,
-        default=0.10,
-        help="Paper thickness in mm used to size the female cavity",
-    )
+    butterfly.add_argument("--out", type=Path, default=Path("build") / "butterfly-test", help="Output directory")
+    butterfly.add_argument("--paper-thickness", type=float, default=0.10, help="Paper thickness in mm")
     return parser
 
 
@@ -127,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "doctor":
             return _doctor()
+        if args.command == "gui":
+            return _gui()
         if args.command == "die":
             return _die(args)
         if args.command == "calibrate":
@@ -162,6 +137,13 @@ def _doctor() -> int:
         print(f"CadQuery:   OK  {version}")
         cadquery_ok = True
 
+    try:
+        import PySide6  # noqa: F401
+    except Exception:
+        print("Desktop UI: optional / install with pip install -e \".[gui]\"")
+    else:
+        print("Desktop UI: OK")
+
     blender = shutil.which("blender") or shutil.which("blender.exe")
     print(f"Blender:    {'OK  ' + blender if blender else 'optional / not on PATH'}")
 
@@ -170,64 +152,44 @@ def _doctor() -> int:
     return 0 if openscad and cadquery_ok else 1
 
 
+def _gui() -> int:
+    try:
+        from .gui import main as gui_main
+    except ImportError as exc:
+        raise RuntimeError(
+            "Desktop UI dependencies are not installed. Run: pip install -e \".[gui]\""
+        ) from exc
+    return gui_main()
+
+
 def _die(args: argparse.Namespace) -> int:
-    name = args.name or args.artwork.stem
-    out = args.out / name
-    normalized = out / f"{name}_normalized.svg"
-
-    normalize_artwork(
-        args.artwork,
-        normalized,
-        threshold=args.threshold,
-        invert=args.invert,
-    )
-
-    base_spec = DieSpec()
     profile = PrinterProfile.from_toml(args.profile) if args.profile else None
-
-    if args.paper_thickness is not None:
-        paper_thickness = args.paper_thickness
-        paper_source = "explicit"
-    elif args.paper:
-        paper_thickness = paper_thickness_for_preset(args.paper)
-        paper_source = f"preset:{args.paper}"
-    else:
-        paper_thickness = base_spec.paper_thickness_mm
-        paper_source = "default"
-
-    if args.clearance is not None:
-        clearance = args.clearance
-        clearance_source = "explicit"
-    elif profile is not None:
-        clearance = profile.recommended_die_clearance_mm
-        clearance_source = f"profile:{profile.name}"
-    else:
-        clearance = base_spec.female_xy_clearance_mm
-        clearance_source = "default"
-
-    spec = replace(
-        base_spec,
+    request = DieGenerationRequest(
+        artwork=args.artwork,
+        output_root=args.out,
+        name=args.name,
         diameter_mm=args.diameter,
         base_thickness_mm=args.base,
         relief_height_mm=args.relief,
-        female_xy_clearance_mm=clearance,
-        paper_thickness_mm=paper_thickness,
+        clearance_mm=args.clearance,
+        paper_preset=args.paper,
+        paper_thickness_mm=args.paper_thickness,
         female_extra_depth_mm=args.extra_depth,
         margin_mm=args.margin,
+        threshold=args.threshold,
+        invert=args.invert,
+        render_stl=not args.scad_only,
+        printer_profile=profile,
     )
-    spec.validate()
-    if profile is not None:
-        profile.validate_die(spec)
+    result = generate_die(request)
 
-    outputs = generate_die_pair(normalized, out, name, spec, render_stl=not args.scad_only)
-
-    print(f"Generated die pair: {name}")
-    if profile is not None:
-        print(f"  printer profile: {profile.name}")
-    print(f"  paper thickness: {paper_thickness:.3f} mm ({paper_source})")
-    print(f"  female clearance: {clearance:.3f} mm ({clearance_source})")
-    print(f"  normalized artwork: {normalized}")
-    for key, path in outputs.items():
+    print(f"Generated die pair: {result.name}")
+    if result.printer_profile is not None:
+        print(f"  printer profile: {result.printer_profile.name}")
+    print(f"  paper thickness: {result.spec.paper_thickness_mm:.3f} mm ({result.paper_source})")
+    print(f"  female clearance: {result.spec.female_xy_clearance_mm:.3f} mm ({result.clearance_source})")
+    print(f"  normalized artwork: {result.normalized_artwork}")
+    for key, path in result.outputs.items():
         print(f"  {key}: {path}")
     return 0
 
@@ -249,12 +211,11 @@ def _calibrate(args: argparse.Namespace) -> int:
 
 
 def _mechanics(args: argparse.Namespace) -> int:
-    cartridge = replace(
-        CartridgeSpec(),
+    cartridge = CartridgeSpec(
         die_diameter_mm=args.die_diameter,
         receiver_slide_clearance_mm=args.slide_clearance,
     )
-    press = replace(PressSpec(), pivot_diameter_mm=args.pivot)
+    press = PressSpec(pivot_diameter_mm=args.pivot)
     outputs = export_press_pack(args.out, cartridge=cartridge, press=press)
 
     print("Generated V0.2 mechanical prototype")
@@ -284,15 +245,12 @@ def _fit_coupon(args: argparse.Namespace) -> int:
     print(f"  STEP: {outputs['step']}")
     print(f"  manifest: {outputs['manifest']}")
     print(f"  solid PLA mass upper bound: {outputs['solid_pla_mass_upper_bound_g']:.2f} g")
-    print("  IMPORTANT: trust FlashPrint's sliced filament estimate before printing")
+    print("  IMPORTANT: trust your slicer's material estimate before printing")
     return 0
 
 
 def _butterfly_test(args: argparse.Namespace) -> int:
-    outputs = export_micro_butterfly_test(
-        args.out,
-        paper_thickness_mm=args.paper_thickness,
-    )
+    outputs = export_micro_butterfly_test(args.out, paper_thickness_mm=args.paper_thickness)
     print("Generated micro butterfly male/female emboss test")
     print("  die diameter: 16 mm")
     print(f"  male STL: {outputs['male_stl']}")
@@ -300,7 +258,7 @@ def _butterfly_test(args: argparse.Namespace) -> int:
     print(f"  artwork: {outputs['artwork']}")
     print(f"  manifest: {outputs['test_manifest']}")
     print(f"  conservative solid pair mass upper bound: {outputs['solid_pair_mass_upper_bound_g']} g")
-    print("  IMPORTANT: slice both at 100% scale and trust FlashPrint's estimate before printing")
+    print("  IMPORTANT: slice both at 100% scale and trust your slicer's estimate before printing")
     return 0
 
 
