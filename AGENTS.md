@@ -1,33 +1,43 @@
-# EmbossForge agent rules
+# EmbossForge agent policy
 
-EmbossForge is a physical engineering project. Preserve dimensions and reproducibility over visual improvisation.
+EmbossForge is an open-source, parametric paper-embosser system and automatic matched-die generator.
 
 ## Source of truth
-- Parametric/mechanical CAD: Python + CadQuery.
-- Artwork-to-die conversion: Python orchestration + OpenSCAD boolean/offset backend for V0.1.
-- Generated STL/STEP/3MF files are artifacts, never hand-edited source.
-- Blender is for visual/mechanical inspection, assembly studies, ergonomics, renders, and tasks requiring the user's desktop environment.
 
-## GPT-6 Astra / Codex budget
-Use Codex/Astra only when work materially benefits from desktop/3D interaction. Do not spend agent time rewriting Python, docs, tests, CLI code, or configuration that can be handled directly in-repo.
+- Mechanical geometry must be generated from source code. Do not hand-edit generated STL/STEP/3MF files.
+- Python + CadQuery are the primary source of truth for precision mechanical parts.
+- OpenSCAD is used where it is the simplest reproducible backend for die relief generation and small calibration artifacts.
+- Blender is for visual inspection, presentation, ergonomic exploration, and complex artistic geometry; it is not the dimensional source of truth for production parts.
 
-## Current printer target
-- FlashForge Adventurer 5M
-- Build volume: 220 x 220 x 220 mm
-- Prototype nozzle: 0.4 mm
-- Precision target later: 0.25 mm
+## Agent usage policy
 
-## Mechanical rules
-- All critical dimensions must be parameters.
-- Never assume a nominal sliding fit is printable; expose clearance as a parameter.
-- Die artwork must never touch the outside edge of an insert.
-- Female die geometry must include XY clearance and additional cavity depth for paper.
-- Add calibration coupons before tightening final tolerances.
-- Prefer hardware pins/bolts for highly loaded pivots over printed pins.
+GPT-6 Astra/Codex usage should be conserved. Do not spend Astra time rewriting ordinary Python, documentation, tests, or simple parametric CAD that can be authored directly in the repository.
 
-## Before merging a geometry change
-1. Regenerate affected models.
-2. Run tests.
-3. Verify there are no non-manifold or zero-thickness regions.
-4. Check print orientation and unsupported overhangs.
-5. Record any new printer-dependent dimension as a profile parameter.
+Use Astra/Codex only when the task genuinely benefits from access to the local PC/GUI/3D environment, for example:
+
+1. Open generated STEP/STL assemblies in Blender/CadQuery/FreeCAD and visually inspect alignment, interference, accessibility, and ergonomics.
+2. Exercise or animate moving assemblies in Blender.
+3. Inspect unusually complex or artistic input geometry that is awkward to diagnose from code/renders alone.
+4. Validate local application integration, slicer behavior, or printer-specific workflows that require the user's installed software.
+
+When using Astra/Codex, keep the task narrow. Prefer: inspect -> identify concrete issue -> make minimal source-code correction -> regenerate -> verify.
+
+## Design rules
+
+- Target printer: FlashForge Adventurer 5M, 220 x 220 x 220 mm build volume.
+- Default prototype nozzle: 0.4 mm. Precision profile may target 0.25 mm.
+- Default units: millimetres.
+- All fits, relief depths, paper gaps, pivot diameters, cartridge dimensions, and safety margins must be named parameters.
+- A change to a shared cartridge interface must update all compatible parts and tests.
+- Prefer hardware-store fasteners/shafts for pivots over printed pins where practical.
+- Never assume theoretical printer tolerances are sufficient; calibration artifacts are first-class outputs.
+
+## Required validation
+
+Before considering a mechanical change complete:
+
+1. Run `pytest -q`.
+2. Regenerate affected geometry.
+3. Verify generated solids are valid/non-empty and dimensions match the configured specification.
+4. For mating parts, generate/inspect the assembly or diagnostic cross-section.
+5. Do not commit generated build outputs unless the repository documentation explicitly asks for release artifacts.
