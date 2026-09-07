@@ -16,7 +16,7 @@ V0.1 already supports:
 - manifest generation for reproducibility
 - a CLI and test suite
 
-The current development target is V0.2: a standard interchangeable cartridge interface, calibration artifacts, and a parametric CadQuery press mechanism.
+V0.2 mechanical source is now in progress and includes a first parametric cartridge/receiver interface and conservative CadQuery lever-press generator. These are **prototype geometries** that must be calibrated and physically validated before normal use.
 
 ## Tool philosophy
 
@@ -77,7 +77,7 @@ The current example uses a 42 mm round die with:
 - 0.10 mm nominal paper thickness
 - 3.0 mm artwork margin
 
-These are development defaults, not final manufacturing constants. EmbossForge will include calibration artifacts so values can be tuned to the actual printer, material, nozzle, and paper stock.
+These are development defaults, not final manufacturing constants. EmbossForge includes calibration work as a first-class part of the roadmap so values can be tuned to the actual printer, material, nozzle, and paper stock.
 
 ## Target printer
 
@@ -119,6 +119,10 @@ Primary development printer:
 ## Agent policy
 
 See [`AGENTS.md`](AGENTS.md). The short version: Astra/Codex is intentionally reserved for tasks that truly need the user's local GUI/3D environment. Ordinary Python, tests, documentation, and most parametric geometry should be implemented directly in source code first.
+
+## Safety / prototype warning
+
+The current press geometry is a prototype. Do not apply large forces until the printed parts, pivot hardware, hard stops, and failure modes have been physically inspected. Keep fingers away from the die gap while operating the press. Printed plastic can fail suddenly under load.
 
 ## Licensing
 
