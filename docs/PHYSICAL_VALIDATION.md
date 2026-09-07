@@ -40,24 +40,26 @@ The male and female pieces printed successfully and the butterfly geometry was v
 
 - arbitrary intricate artwork quality
 - fine text or thin-line limits
-- cartridge/receiver fit
 - the Micro Embosser, miniature, or full press mechanism
 - full-size press strength or durability
 - optimal clearances for different paper stocks
 
-## Next queued physical article — 16 mm Micro Embosser
+## Next queued physical article — 16 mm PLA flexure Micro Embosser
 
-The repository now includes `embossforge micro-press`, a dedicated low-force press whose cartridge dimensions are tied directly to the already-proven 16 mm `butterfly-test` die contract.
+`embossforge micro-press` now generates a **single-piece tong-style hand embosser** whose two long PLA arms flex elastically and whose opposing keyed sockets accept the already-proven 16 mm butterfly pair directly.
 
-This article is **software/CAD validated only until printed**. Its first physical test should record, in order:
+There are no cartridges, guide rods, pivots, rollers, screws, or separate press parts in this micro article. It is intentionally a very low-material test.
 
-1. actual butterfly-die fit in one keyed cartridge;
-2. cartridge sliding fit in the receiver;
-3. open/closed platen and lever motion;
-4. male/female alignment under paper;
-5. whether the known-good butterfly pair embosses cleanly using lever force;
-6. any observed flex, binding, cracking, or stop/alignment error.
+This article is **software/CAD validated only until printed**. Its first physical test should record:
 
-See `docs/MICRO_PRESS.md` for the exact print/assembly sequence.
+1. actual butterfly-die fit in both direct keyed sockets;
+2. whether the dies stay seated while handling paper;
+3. whether the unloaded jaw gap and alignment are sensible;
+4. how much hand force is required to bring the pair into engagement;
+5. whether the known-good butterfly pair embosses cleanly;
+6. whether the spring arms return after release;
+7. any whitening, cracking, permanent set, twisting, or loss of die alignment after repeated squeezes.
+
+See `docs/MICRO_PRESS.md` for the exact print/use sequence.
 
 Future physical tests should append dated entries here rather than overwriting earlier results.
