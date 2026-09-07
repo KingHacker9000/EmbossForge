@@ -11,6 +11,7 @@ from .artwork import normalize_artwork
 from .calibration import write_calibration_pack
 from .config import DieSpec
 from .mechanics import CartridgeSpec, PressSpec, export_mini_test_pack, export_press_pack
+from .mechanics.fit_coupon import export_fit_coupon
 from .scad_backend import find_openscad, generate_die_pair, render_scad
 
 
@@ -63,6 +64,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.10,
         help="Paper thickness used for the miniature matched die pair in mm",
     )
+
+    fit = sub.add_parser(
+        "fit-coupon",
+        help="Generate an ultra-small two-piece rail/receiver fit test for scarce filament",
+    )
+    fit.add_argument("--out", type=Path, default=Path("build") / "fit-coupon", help="Output directory")
+    fit.add_argument(
+        "--slide-clearance",
+        type=float,
+        default=0.25,
+        help="Per-side cartridge/receiver clearance in mm",
+    )
     return parser
 
 
@@ -79,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
             return _mechanics(args)
         if args.command == "mini-test":
             return _mini_test(args)
+        if args.command == "fit-coupon":
+            return _fit_coupon(args)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -183,6 +198,17 @@ def _mini_test(args: argparse.Namespace) -> int:
     print("  NOTE: this is for fit/motion/light-emboss validation, not full-strength testing")
     for key, path in outputs.items():
         print(f"  {key}: {path}")
+    return 0
+
+
+def _fit_coupon(args: argparse.Namespace) -> int:
+    outputs = export_fit_coupon(args.out, slide_clearance_mm=args.slide_clearance)
+    print("Generated ultra-low-filament rail fit coupon")
+    print(f"  STL: {outputs['stl']}")
+    print(f"  STEP: {outputs['step']}")
+    print(f"  manifest: {outputs['manifest']}")
+    print(f"  solid PLA mass upper bound: {outputs['solid_pla_mass_upper_bound_g']:.2f} g")
+    print("  IMPORTANT: trust FlashPrint's sliced filament estimate before printing")
     return 0
 
 
