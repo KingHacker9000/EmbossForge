@@ -1,236 +1,102 @@
 # Artwork guide
 
-EmbossForge accepts SVG directly and can vectorize common raster formats such as PNG and JPG. The generator then creates matched male/female geometry with configurable clearance and cavity depth.
+EmbossForge supports three explicit artwork semantics. Choosing the right one matters because pixels that look three-dimensional are not necessarily physical height.
 
-The **current implemented artwork path is binary**: foreground artwork is embossed at one constant relief height. A planned vNext **variable-depth grayscale relief** mode is specified in [RELIEF_MODE_SPEC.md](RELIEF_MODE_SPEC.md).
+Agents creating artwork should also read [`skills/embossforge-design/SKILL.md`](../skills/embossforge-design/SKILL.md).
 
-Raster/image interpretation is specified separately in [IMAGE_INPUT_SPEC.md](IMAGE_INPUT_SPEC.md). That distinction matters because an image that *looks* embossed is not necessarily a true height map.
+## 1. Flat artwork
 
-Agents creating artwork for EmbossForge should use [`skills/embossforge-design/SKILL.md`](../skills/embossforge-design/SKILL.md).
+Use **Simple emboss** / `binary` mode for SVG logos, silhouettes, line art, monograms, and ordinary high-contrast raster images. Foreground geometry receives one relief height.
 
----
+SVG is preferred when possible. Raster input works best when it is high contrast, clean, large enough to avoid pixelated edges, and simple enough to survive the selected nozzle. `--invert` handles light artwork on a dark background.
 
-## Three kinds of image input
+When a printer profile is selected, raster artwork is canonicalized against the profile's positive-feature and negative-gap limits **before** the male and female are derived. This prevents the two halves from independently losing different tiny details.
 
-EmbossForge should distinguish these concepts:
+## 2. True height maps
 
-### 1. Flat artwork
+Use **Variable depth → True height map** when grayscale was intentionally authored as geometry.
 
-Examples:
-
-- clean SVG logos;
-- silhouettes;
-- line art;
-- ordinary high-contrast PNGs;
-- monograms.
-
-Use the current binary path unless the user deliberately assigns multiple relief levels.
-
-### 2. True height maps
-
-A height map was authored so grayscale represents physical Z height.
-
-EmbossForge's planned default convention is:
+Default machine convention:
 
 ```text
 white = zero relief
 black = maximum relief
+mid gray = intermediate relief
 ```
 
-A machine height map should have no lighting, cast shadows, specular highlights, perspective, or metallic rendering.
+The polarity can be reversed explicitly. A machine height map should not contain decorative lighting, cast shadows, specular highlights, perspective shading, or metallic rendering.
 
-### 3. Shaded / 3D-looking references
+Relief controls include maximum depth, stepped/continuous mapping, number of stepped levels, gamma, zero/dead-zone, smoothing, sampling quality, and printer-aware sub-resolution filtering.
 
-Examples:
+For ordinary FDM work, stepped relief is usually easier to reason about. Continuous mode is available when the source and printer justify smoother height changes.
 
-- AI-generated silver medallions;
-- rendered bas-relief artwork;
-- bevelled Photoshop-style logos;
-- photographs of coins or carvings.
+## 3. Shaded / 3D-looking references
 
-These are useful inputs, but their grayscale tones include **lighting** as well as shape. EmbossForge should accept them and offer **Convert 3D-looking artwork to relief**, not silently treat raw luminance as literal depth.
+Use **Variable depth → 3D-looking / shaded reference** for AI-generated silver medallions, rendered bas-relief, bevelled artwork, photographs of coins/carvings, or other images whose tones contain both shape and lighting.
 
-Full behavior: [IMAGE_INPUT_SPEC.md](IMAGE_INPUT_SPEC.md).
+EmbossForge does **not** map raw luminance directly to Z. The deterministic `shaded-reference` converter:
 
----
+1. estimates the background from alpha or image borders;
+2. isolates the coherent motif and preserves enclosed regions across bright highlights;
+3. applies printer-aware cleanup;
+4. removes broad illumination trends;
+5. uses motif boundaries, distance, and stable local structure to synthesize emboss-oriented relief;
+6. writes an explicit derived machine height map, visual relief preview, and foreground mask;
+7. feeds that derived map into the same matched-relief backend as a true height map.
 
-## Best input format for current binary mode
+The manifest records method `deterministic-shaded-reference-v1` and explicitly states that the result is **interpreted emboss relief, not reconstructed true 3D depth**.
 
-Prefer SVG whenever possible. A clean vector logo or silhouette gives the most predictable result.
+The desktop app performs this as a two-stage workflow: derive and validate the preview first, then require the user to accept that preview before rendering final STLs.
 
-Raster input works best when it is:
+Full source behavior: [IMAGE_INPUT_SPEC.md](IMAGE_INPUT_SPEC.md).
 
-- high contrast;
-- dark artwork on a light background;
-- free of photographic texture;
-- large enough that edges are not pixelated;
-- simple enough to survive the target nozzle width.
+## Design for physical printing
 
-Use `--invert` when the foreground is light and the background is dark.
+An image can look excellent on screen and still be a poor embossing tool. Thin lines, narrow gaps, isolated peaks, and delicate serif/floral details can merge, vanish, or become puncture points.
 
-## Design for embossing, not just for the screen
+For the current FlashForge Adventurer 5M / 0.4 mm profile, the present conservative metadata is approximately:
 
-An image can look excellent on a monitor and still be a poor embossing design. Very thin lines, tiny islands, narrow gaps, and delicate serif details may merge or disappear when printed.
+- positive feature: 0.50 mm minimum;
+- negative gap: 0.45 mm minimum;
+- profile-specific effective line width and XY compensation are also modeled.
 
-For the current FlashForge Adventurer 5M / 0.4 mm development profile, treat roughly **0.50 mm** as the current conservative minimum feature width and **0.45 mm** as the current profile minimum gap until calibration proves otherwise. These are printer/profile guidance, not universal paper-safety guarantees.
+These are development/profile limits, not universal values and not paper-safety guarantees.
 
-Fine details may improve with a 0.25 mm nozzle.
+### Good relief artwork
 
-## SVG coordinate handling
+- broad, intentional height regions;
+- a small number of meaningful depth tiers;
+- coarse texture with physical pitch large enough for the nozzle;
+- shallow transitions rather than needle-like peaks;
+- white/zero background around the active relief where appropriate.
 
-EmbossForge canonicalizes non-zero and negative SVG `viewBox` origins before OpenSCAD import. This avoids a class of failures where the imported artwork is shifted and circular clipping leaves only a small sliver of the design.
+### Risky relief artwork
 
-If an SVG still renders incorrectly, reduce it to a minimal file and open an issue with:
-
-- the original artwork;
-- the generated normalized SVG;
-- the generated SCAD file;
-- a screenshot of the slicer preview.
-
-## Raster conversion in current binary mode
-
-Raster artwork is thresholded and traced into filled vector contours. Useful controls:
-
-```text
---threshold 160
---invert
-```
-
-Lower/higher thresholds change which pixels are treated as foreground. The current raster tracer is intentionally simple and is expected to improve before 1.0.
-
----
-
-## Planned variable-depth grayscale relief
-
-The accepted vNext design extends artwork semantics so grayscale can become actual emboss height/depth instead of being discarded by thresholding.
-
-Examples:
-
-```text
-black      -> strongest relief
-mid gray   -> medium relief
-light gray -> shallow relief
-white      -> zero relief
-```
-
-The default proposed polarity is **dark = high relief**, preserving the current mental model that dark artwork is active. Users will be able to explicitly reverse that mapping.
-
-This enables artwork such as:
-
-- a deep outer seal ring and a shallower inner ring;
-- layered monograms;
-- coarse textures;
-- stepped decorative relief;
-- smooth gradients where printer resolution supports them.
-
-### Grayscale artwork should communicate intentional height
-
-When designing specifically for variable-depth mode, use tone as structure rather than decorative shading.
-
-Good examples:
-
-- large regions at clearly different gray values;
-- broad transitions rather than one-pixel gradients;
-- coarse texture whose pitch is meaningful at the physical die size;
-- a small number of intentional height levels for FDM printing;
-- a white zero-height background with darker geometric relief regions.
-
-Riskier examples:
-
-- photographic noise;
-- compression artifacts;
+- photographic noise or compression artifacts;
 - very fine grain;
-- narrow bright/dark halos from sharpening;
-- tiny high-contrast speckles;
-- abrupt tall ridges thinner than the printer can resolve;
-- metallic highlights and shadows being mistaken for geometry.
+- sharpening halos;
+- isolated bright/dark speckles;
+- tall narrow ridges;
+- raw metallic highlights/shadows treated as literal geometry.
 
-Relief mode will include a zero/dead-zone threshold so near-white noise does not necessarily become microscopic relief.
+## SVG handling
 
-### Shaded renders are references, not height maps
+Binary SVG import is implemented and normalizes non-zero/negative `viewBox` origins before OpenSCAD import.
 
-A realistic gray/metallic butterfly medallion can contain a bright highlight on one edge of a raised wing cell and a dark shadow on the other edge. The physical wing cell may be at one consistent height, so mapping those light/shadow pixels directly to Z would invent false geometry.
+Variable-depth SVG tone/gradient rendering is **not** currently the machine path. For multi-depth SVG artwork, export an authored raster height map and use `height-map`; ordinary SVG artwork should remain in binary mode.
 
-For such images, the planned workflow is:
+## Matched-pair invariant
 
-```text
-shaded PNG
-   |
-   v
-source interpretation: shaded-reference
-   |
-   v
-lighting/detail normalization
-   |
-   v
-derived machine height map
-   |
-   v
-user preview + validation
-   |
-   v
-matched dies
-```
+Both halves must originate from one canonical source field. EmbossForge adds paper thickness, female XY clearance, and extra cavity depth to derive the female, then checks height-field accommodation and—when STLs are rendered—nominal exported-mesh closure.
 
-The original image remains preserved as provenance; the derived height map is the machine geometry input.
-
-### Agent-authored height maps
-
-When an image-capable LLM/agent is available, the preferred workflow for ornate designs is to ask it to produce a **true unlit height map** and, optionally, a separate decorative preview.
-
-Repository skill:
-
-```text
-skills/embossforge-design/SKILL.md
-```
-
-The skill teaches agents to:
-
-- design in physical millimetres rather than only pixels;
-- keep details printable for the target nozzle;
-- use white as zero relief and dark tones as increasing relief by default;
-- avoid cast shadows/highlights in machine maps;
-- separate preview renders from machine geometry;
-- simplify ornate floral/butterfly/monogram designs without losing their identity;
-- avoid claiming paper safety without physical validation.
-
-### SVG grayscale semantics
-
-Variable-depth SVGs cannot be handled by the current color-insensitive OpenSCAD import alone. Relief mode is specified to render SVG fills, strokes, opacity, and gradients to an internal grayscale height map first.
-
-That means SVG color/tone will become meaningful in relief mode, while current binary SVG behavior remains unchanged.
-
-### Stepped versus continuous relief
-
-The vNext specification defines:
-
-- **Stepped relief** — tones are quantized to a fixed number of physical heights. Proposed first FDM-friendly default: six levels.
-- **Continuous relief** — tone maps continuously to height.
-
-Stepped relief is expected to be easier to reason about on ordinary FDM printers. Continuous mode remains available for users who intentionally want smoother surfaces.
-
-### Paper-damage warnings
-
-Variable-height dies can create sharper local slopes, narrow tall ridges, or deep textures that may crease, puncture, or tear paper.
-
-EmbossForge's planned validator will warn about those conditions using experimental, profile-driven heuristics. These warnings are **not guarantees of safety** and are intended to remain overrideable when the user deliberately wants aggressive tooling.
-
-Impossible geometry, such as a female cavity cutting through the base, remains a hard error and cannot be bypassed.
-
-Full relief behavior: [RELIEF_MODE_SPEC.md](RELIEF_MODE_SPEC.md).
-
-Full raster/source interpretation behavior: [IMAGE_INPUT_SPEC.md](IMAGE_INPUT_SPEC.md).
-
----
+A hard mating/geometry error cannot be bypassed with the paper-risk override. Experimental paper-risk warnings can be accepted deliberately.
 
 ## Orientation
 
-The current circular die carrier has a hidden orientation tab. Male and female geometry are generated to account for the upper die being installed flipped relative to the lower die. Do not independently rotate one generated insert unless you also understand and compensate for that transform.
-
-The same orientation invariant applies to future variable-depth relief: both surfaces must originate from one source height field and the established upper-cartridge transform.
+The circular carrier has a hidden orientation tab. Upper geometry is mirrored/transformed for installation relative to the lower die. Do not independently rotate one generated insert.
 
 ## Before spending filament
 
-Always inspect the slicer preview. The silhouette or lettering should be clearly recognizable before printing. For a new artwork pipeline change, use a small die first rather than immediately generating the full 42 mm production-size insert.
+Inspect the slicer preview and use a small test first. Binary embossing has a recorded physical success. Variable-depth and shaded-reference geometry are software/CAD validated but still require dedicated multi-height physical calibration before being described as physically proven.
 
-For future variable-depth relief, physical validation should begin with small stepped-depth/ring coupons before large or intricate designs. Software/CAD success alone is not evidence that a relief pattern will emboss cleanly or avoid tearing paper.
+See [RELIEF_MODE_SPEC.md](RELIEF_MODE_SPEC.md), [IMAGE_INPUT_SPEC.md](IMAGE_INPUT_SPEC.md), and [PHYSICAL_VALIDATION.md](PHYSICAL_VALIDATION.md).
