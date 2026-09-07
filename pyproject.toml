@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "embossforge"
-version = "0.1.0"
+version = "0.2.0"
 description = "Open-source parametric embosser and automatic interchangeable die generator for 3D printing."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,7 +41,7 @@ release = [
 embossforge = "embossforge.cli:main"
 
 [project.gui-scripts]
-embossforge-gui = "embossforge.gui:main"
+embossforge-gui = "embossforge.gui_vnext:main"
 
 [project.urls]
 Homepage = "https://github.com/KingHacker9000/EmbossForge"
