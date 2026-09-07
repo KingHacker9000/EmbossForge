@@ -19,6 +19,7 @@ The project remains pre-1.0. Interfaces, dimensions, and generated geometry may 
 - printer/emboss calibration artifacts
 - parametric CadQuery press, cartridges, receivers, assembly metadata, STEP/STL export, and open/closed collision checks
 - low-filament miniature press, fit coupon, and micro butterfly matched-die smoke tests
+- dedicated `micro-press` / **Micro Embosser** sized to the already-printed 16 mm butterfly-test die contract, with a 58 × 65 mm base, 80 mm lever, exact keyed cartridge pockets, staged filament-saving print order, and CI collision/export coverage
 - deterministic variable-depth raster height-map backend
 - stepped and continuous grayscale-to-height mapping with configurable maximum depth, gamma, polarity, dead zone, smoothing, and sampling quality
 - shared canonical male height field from which the female relief is derived with paper thickness, XY clearance, and extra-depth allowance
@@ -31,7 +32,7 @@ The project remains pre-1.0. Interfaces, dimensions, and generated geometry may 
 - deterministic shaded-reference converter (`deterministic-shaded-reference-v1`) that suppresses broad illumination, isolates motifs, synthesizes emboss-oriented relief, and preserves the derived height map, preview, and mask
 - desktop two-stage shaded-reference workflow: derive/validate preview first, then explicitly accept it before final STL rendering
 - advisory continuous-shading detection that recommends the shaded-reference path without silently changing source semantics
-- CI coverage for variable-depth STL rendering, manifest v2, closure validation, shaded-reference conversion, and the vNext Windows desktop window
+- CI coverage for variable-depth STL rendering, manifest v2, closure validation, shaded-reference conversion, the Micro Embosser, and the vNext Windows desktop window
 - Windows release validation for binary and variable-depth STL generation
 - `skills/embossforge-design/SKILL.md` for image-capable LLM agents creating manufacturable EmbossForge artwork/height maps
 
@@ -45,10 +46,10 @@ The project remains pre-1.0. Interfaces, dimensions, and generated geometry may 
 
 ### Validation status
 
-Software/CAD validation covers binary generation, true height maps, shaded-reference derivation, matched height fields, printer-aware filtering, hard closure checks, and Windows desktop construction. Variable-depth physical emboss quality is not yet claimed as validated.
+Software/CAD validation covers binary generation, true height maps, shaded-reference derivation, matched height fields, printer-aware filtering, hard closure checks, Micro Embosser open/closed printed-part collision checks, and Windows desktop construction. Variable-depth physical emboss quality and the Micro Embosser mechanism are not yet claimed as physically validated.
 
 ### Physically validated
 
 - 2026-09-07: 16 mm **binary** butterfly matched die pair printed successfully on a FlashForge Adventurer 5M with a 0.4 mm nozzle and produced a visible emboss on ordinary notebook paper.
 
-The next physical validation milestone is a small multi-height/stepped relief coupon when material is available. See `docs/PHYSICAL_VALIDATION.md`.
+The next physical validation milestones are the butterfly-compatible Micro Embosser and a small multi-height/stepped relief coupon when material is available. See `docs/PHYSICAL_VALIDATION.md`.
