@@ -5,12 +5,25 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 from .config import DieSpec
 
 
+def _bundled_tool_candidates() -> list[Path]:
+    """Return OpenSCAD locations used by PyInstaller/portable releases."""
+    roots: list[Path] = []
+    if getattr(sys, "frozen", False):
+        roots.append(Path(sys.executable).resolve().parent)
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            roots.append(Path(meipass))
+    return [root / "tools" / "openscad" / "openscad.exe" for root in roots]
+
+
 def find_openscad() -> Path | None:
-    candidates = []
+    candidates: list[Path] = []
+    candidates.extend(_bundled_tool_candidates())
     found = shutil.which("openscad") or shutil.which("OpenSCAD")
     if found:
         candidates.append(Path(found))
@@ -30,11 +43,12 @@ def find_openscad() -> Path | None:
 
 
 def render_scad(source_scad: str | Path, output_stl: str | Path) -> Path:
-    """Render one OpenSCAD source file to STL using the local OpenSCAD binary."""
+    """Render one OpenSCAD source file to STL using local or bundled OpenSCAD."""
     openscad = find_openscad()
     if openscad is None:
         raise RuntimeError(
-            "OpenSCAD executable was not found. Add it to PATH or install it in the default location."
+            "OpenSCAD executable was not found. Install OpenSCAD, add it to PATH, "
+            "or use the official EmbossForge portable release that bundles it."
         )
     source = Path(source_scad)
     output = Path(output_stl)
@@ -124,8 +138,6 @@ def _art_module(art: Path, spec: DieSpec, *, delta: float = 0.0, mirror_x: bool 
 
 def _carrier_base_scad(spec: DieSpec) -> str:
     """2D keyed carrier base: round die plus one hidden +Y orientation tab."""
-    # Tab overlaps the round base by 0.5 mm for a robust union and extends
-    # exactly key_depth_mm beyond the nominal circular edge.
     overlap = 0.5
     tab_depth = spec.key_depth_mm + overlap
     tab_y = spec.diameter_mm / 2 + (spec.key_depth_mm - overlap) / 2
@@ -159,10 +171,6 @@ union() {{
 
 
 def _female_scad(art: Path, spec: DieSpec) -> str:
-    # The entire upper cartridge is installed by rotating 180 degrees about Y.
-    # That transformation mirrors X on the working face, so pre-mirroring X here
-    # makes the installed female cavity line up with the lower male relief while
-    # keeping the +Y insertion/key direction identical for both cartridges.
     art_expr = _art_module(art, spec, delta=spec.female_xy_clearance_mm, mirror_x=True)
     base_expr = _carrier_base_scad(spec)
     cavity = spec.female_cavity_depth_mm
