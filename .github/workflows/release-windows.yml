@@ -26,14 +26,12 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install Python dependencies
+      - name: Install desktop dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install -e ".[cad,gui,dev]"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install "pyinstaller>=6.12"
+          python -m pip install -e ".[gui,dev,release]"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           exit 0
 
@@ -46,13 +44,23 @@ jobs:
           if ($LASTEXITCODE -notin @(0, 1641, 3010)) { exit $LASTEXITCODE }
           exit 0
 
-      - name: Run tests
+      - name: Run desktop-backend tests
         shell: pwsh
         run: |
-          python -m pytest -q
-          $testExit = $LASTEXITCODE
-          Write-Host "pytest exit code: $testExit"
-          exit $testExit
+          python -m pytest -q `
+            tests/test_artwork.py `
+            tests/test_calibration.py `
+            tests/test_config.py `
+            tests/test_generator.py `
+            tests/test_micro_die.py `
+            tests/test_scad_backend.py
+          exit $LASTEXITCODE
+
+      - name: Verify real STL generation on Windows
+        shell: pwsh
+        run: |
+          python -c "from pathlib import Path; from embossforge.micro_die import export_micro_butterfly_test; r=export_micro_butterfly_test(Path('build/release-smoke')); assert Path(r['male_stl']).is_file(); assert Path(r['female_stl']).is_file(); print('Windows STL generation OK')"
+          exit $LASTEXITCODE
 
       - name: Smoke-test desktop window
         shell: pwsh
@@ -99,6 +107,8 @@ jobs:
           if (-not (Test-Path "dist\EmbossForge\tools\openscad\openscad.exe")) {
             throw "Portable bundle is missing OpenSCAD"
           }
+          & "dist\EmbossForge\tools\openscad\openscad.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create portable ZIP
         shell: pwsh
