@@ -14,6 +14,7 @@ Read these repository contracts when available:
 - `docs/ARTWORK_GUIDE.md`
 - `docs/RELIEF_MODE_SPEC.md`
 - `docs/IMAGE_INPUT_SPEC.md`
+- `docs/MATING_VALIDATION_SPEC.md`
 - `AGENTS.md`
 
 ---
@@ -162,6 +163,22 @@ Example: for a 1024 px image intended for a 42 mm die,
 ```
 
 A 2-3 px decorative line may look elegant on screen and disappear completely on the printed die.
+
+### Paired positive/negative printability
+
+EmbossForge does not print a design only once: the same motif must survive as a **positive feature on one die and a matching negative accommodation on the other**.
+
+A thin line can be especially dangerous because a slicer may retain it as a single extrusion on the male while deleting the matching female groove as an unprintably narrow negative gap. That creates a die pair that cannot close.
+
+When designing artwork:
+
+- do not judge only whether a positive stroke can print;
+- keep intended matching grooves/counters wide enough to survive the selected profile's negative-feature limit;
+- avoid tiny counters and narrow channels that may close on one side;
+- prefer broad ridges and generous clearances over hairlines;
+- if a detail is below resolution, simplify/remove it rather than relying on asymmetric slicer behavior.
+
+The canonical requirement is in `docs/MATING_VALIDATION_SPEC.md`. Final generation must validate predicted male/female closure after printer-aware canonicalization.
 
 ---
 
@@ -316,7 +333,9 @@ Verify:
 - [ ] background value is unambiguous;
 - [ ] polarity is stated;
 - [ ] major features fit within the intended die boundary;
-- [ ] fine features are physically plausible for the stated nozzle/profile;
+- [ ] fine positive features are physically plausible for the stated nozzle/profile;
+- [ ] corresponding negative spaces/grooves are also physically plausible for the stated profile;
+- [ ] no detail depends on a slicer preserving one side while erasing its mate;
 - [ ] text remains readable at small size;
 - [ ] no accidental isolated high pixels exist;
 - [ ] gradients are geometric, not decorative lighting;
@@ -329,7 +348,7 @@ Verify:
 
 Adapt this template to the user's requested motif:
 
-> Create a **machine-readable orthographic grayscale height map** for a circular 3D-printed paper embosser die. Final die diameter: **{DIE_MM} mm**. Target nozzle: **{NOZZLE_MM} mm**. White is **zero relief** and black is **maximum relief**. Use broad, deliberate grayscale height regions only. **No lighting, no cast shadows, no metallic rendering, no highlights, no perspective, no ambient-occlusion shading, and no decorative background gradients.** Keep all important details physically large enough for the target nozzle. Use a strong outer ring, readable central motif, sturdy text/monogram, and shallow secondary ornament. Smooth dangerous needle-like peaks and avoid hairline ridges. Output only the height map on a clean white background.
+> Create a **machine-readable orthographic grayscale height map** for a circular 3D-printed paper embosser die. Final die diameter: **{DIE_MM} mm**. Target nozzle: **{NOZZLE_MM} mm**. White is **zero relief** and black is **maximum relief**. Use broad, deliberate grayscale height regions only. **No lighting, no cast shadows, no metallic rendering, no highlights, no perspective, no ambient-occlusion shading, and no decorative background gradients.** Keep all important details physically large enough for the target nozzle, including both positive strokes and the matching negative spaces that must exist on the opposing die. Use a strong outer ring, readable central motif, sturdy text/monogram, and shallow secondary ornament. Smooth dangerous needle-like peaks and avoid hairline ridges. Output only the height map on a clean white background.
 
 Example motif addition:
 
