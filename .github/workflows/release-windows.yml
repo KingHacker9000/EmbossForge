@@ -85,15 +85,21 @@ jobs:
       - name: Bundle OpenSCAD and notices
         shell: pwsh
         run: |
-          $openScadExe = Get-ChildItem "C:\Program Files" -Filter openscad.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $openScadExe) {
-            $openScadExe = Get-ChildItem "C:\Program Files (x86)" -Filter openscad.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          $knownOpenScad = @(
+            "C:\Program Files\OpenSCAD\openscad.exe",
+            "C:\Program Files (x86)\OpenSCAD\openscad.exe"
+          )
+          $openScadPath = $knownOpenScad | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $openScadPath) {
+            $command = Get-Command openscad.exe -ErrorAction SilentlyContinue
+            if ($command) { $openScadPath = $command.Source }
           }
-          if (-not $openScadExe) { throw "Could not locate OpenSCAD after installation" }
+          if (-not $openScadPath) { throw "Could not locate OpenSCAD after installation" }
+          $openScadDir = Split-Path $openScadPath -Parent
 
           $toolDir = "dist\EmbossForge\tools\openscad"
           New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
-          Copy-Item (Join-Path $openScadExe.Directory.FullName "*") $toolDir -Recurse -Force
+          Copy-Item (Join-Path $openScadDir "*") $toolDir -Recurse -Force
           Copy-Item LICENSE "dist\EmbossForge\LICENSE.txt"
           Copy-Item THIRD_PARTY_NOTICES.md "dist\EmbossForge\THIRD_PARTY_NOTICES.md"
           Copy-Item README.md "dist\EmbossForge\README.md"
