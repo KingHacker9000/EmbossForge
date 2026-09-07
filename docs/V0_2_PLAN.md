@@ -2,67 +2,102 @@
 
 This milestone establishes the reusable mechanical platform around the already-working die generator.
 
-## Cartridge interface goals
+## Cartridge interface
 
-The cartridge interface must:
+V0.2 uses a **universal sliding cartridge**. The same cartridge geometry is printed twice: one for the lower male insert and one for the upper female insert.
 
-- accept a matched upper/lower die pair without tools
-- force a known orientation
-- prevent swapping upper/lower halves accidentally where practical
-- locate the die concentrically and repeatably
-- transfer embossing force through broad printed surfaces, not through retention magnets
-- remain printable on the FlashForge Adventurer 5M
-- expose all fit dimensions as parameters
+The cartridge:
 
-Initial reference dimensions:
+- accepts a 42 mm keyed die insert
+- uses a hidden +Y tab on the die base to lock angular orientation
+- slides on captured lateral rails into a universal receiver
+- opens from the +Y/front side for quick changes
+- includes a finger scallop so the die insert can be removed
+- keeps the die pocket and receiver clearances parametric
+
+The upper cartridge/receiver assembly is rotated 180 degrees about **Y**, not X. That keeps the front insertion direction unchanged. The female artwork generator therefore pre-mirrors the female cavity in X.
+
+Current prototype dimensions:
 
 - die diameter: 42 mm
 - die base thickness: 3 mm
-- cartridge outer width: 52 mm
-- cartridge outer depth: 58 mm
-- cartridge body thickness: 6 mm before die pocket/retention features
-- nominal slide clearance: 0.25 mm for the 0.4 mm nozzle profile
+- die key: 6.0 x 2.5 mm
+- cartridge body: 52 x 58 x 6 mm
+- die-pocket per-side clearance: 0.15 mm
+- receiver slide per-side clearance: 0.25 mm
+- receiver height: 6.5 mm
 
-These are prototype values and will be replaced by measured values after calibration prints.
+These are development defaults and must be tuned with calibration prints before final release.
 
-## Press concept
+## Press architecture
 
-V0.2 uses a compact lever press with:
+The initial free-sliding printed-ram concept was replaced with a **two-rod guided platen** because it is simpler, more repeatable, and avoids a wide upper receiver colliding with printed guide walls.
 
-- rigid base
-- two side cheeks
-- steel or hardware-store pivot bolt
-- long lever handle
-- guided upper ram
-- upper cartridge receiver
-- lower cartridge receiver
-- mechanical hard stop so the die pair cannot be over-crushed accidentally
+The V0.2 press contains:
 
-The first press is intentionally conservative rather than elegant. Geometry remains fully parametric so lever ratio, throat depth, pivot size, and cartridge position can be changed after the first physical test.
+- 130 x 155 x 12 mm printed base
+- two printed side cheeks
+- printed top bridge
+- two 8 mm smooth vertical guide rods
+- sliding printed upper platen
+- universal lower and upper cartridge receivers
+- two printed stop sleeves around the guide rods
+- 205 mm printed lever
+- transverse contact roller under the lever
+- main M6-class pivot
+- M5-class roller pin
 
-## Calibration before finalizing fits
+All unique printed parts fit inside the FlashForge Adventurer 5M 220 mm build envelope. The lever closes approximately horizontal and opens upward; it does not need to swing below the table/base plane.
 
-Generate and print a calibration pack before treating any fit values as final:
+### Hard stop
 
-1. slide/slot clearances
-2. round plug/pocket clearances
-3. emboss relief depths
-4. male/female XY clearances
-5. fine line and fine gap features
+The two guide-rod stop sleeves sit between the base and platen and define the minimum platen position. Their generated height is derived from the requested closed die-face gap. This is intentionally simple and physically inspectable.
 
-The preferred fit is the smallest clearance that assembles repeatedly without force after cooling.
+### Lever contact
+
+The lever does not scrape directly across the platen. A small transverse roller between two short lever ears contacts the platen. Two shallow reliefs in the platen give the ears clearance through the opening arc.
+
+## Automatic geometry QA
+
+`embossforge mechanics` now performs a CadQuery collision check in both the fully open and nominally closed states before considering the mechanical pack valid.
+
+It also exports:
+
+- STL files for printing
+- STEP files for engineering inspection
+- `mechanics_manifest.json`
+- `assembly_layout.json`
+- hardware lengths and quantities
+
+The current default generated assembly has no unintended printed-part intersections in either checked state.
+
+## Calibration before printing the full press
+
+Run:
+
+```powershell
+embossforge calibrate
+```
+
+The calibration pack tests:
+
+1. fit/clearance values
+2. emboss relief depth
+3. male/female XY clearance
+
+Use the smallest mechanical clearance that assembles repeatedly after cooling, and choose emboss settings using the actual paper stock.
 
 ## Astra/Codex boundary
 
-Astra/Codex should not be asked to invent or rewrite the parametric model from scratch.
+Astra/Codex should **not** recreate the CAD from scratch.
 
-Use it only after source-generated parts exist locally, for example:
+After `embossforge mechanics`, the repo already includes `blender/import_assembly.py`, which loads the generated assembly and hardware preview into Blender. Astra's eventual job should be limited to local 3D QA such as:
 
-- load the generated STEP/STL assembly in Blender or another local 3D tool
-- inspect collisions and alignment
-- verify cartridge insertion/removal is visually plausible
-- assess lever ergonomics and access
-- produce diagnostic screenshots/renders
-- make only minimal source-code corrections tied to a concrete issue
+- inspect the open and closed assemblies visually
+- check cartridge access and removal
+- assess handle/lever ergonomics
+- identify awkward interference not captured by static solid collision checks
+- inspect slicer orientation/support needs
+- suggest minimal source-code changes tied to concrete issues
 
-This keeps expensive agent usage focused on local 3D inspection rather than ordinary coding.
+This keeps expensive GPT-6 Astra usage focused on the tasks that actually benefit from a local 3D environment.
