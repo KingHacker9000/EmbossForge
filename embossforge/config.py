@@ -30,9 +30,6 @@ class DieSpec:
     paper_thickness_mm: float = 0.10
     margin_mm: float = 3.0
     facets: int = 160
-    # Hidden orientation key on the carrier base. The artwork/embossing face
-    # remains circular; the tab sits outside the nominal die diameter and is
-    # captured by the cartridge pocket.
     key_width_mm: float = 6.0
     key_depth_mm: float = 2.5
 
@@ -50,7 +47,6 @@ class DieSpec:
 
     @property
     def carrier_depth_mm(self) -> float:
-        """Overall Y envelope including the hidden orientation tab."""
         return self.diameter_mm + self.key_depth_mm
 
     def validate(self) -> None:
@@ -97,6 +93,17 @@ class PrinterProfile:
     min_feature_mm: float
     min_gap_mm: float
     recommended_die_clearance_mm: float
+    line_width_mm: float | None = None
+    min_negative_feature_mm: float | None = None
+    xy_compensation_mm: float = 0.0
+
+    @property
+    def effective_line_width_mm(self) -> float:
+        return self.line_width_mm if self.line_width_mm is not None else self.nozzle_mm
+
+    @property
+    def effective_min_negative_feature_mm(self) -> float:
+        return self.min_negative_feature_mm if self.min_negative_feature_mm is not None else self.min_gap_mm
 
     @classmethod
     def from_toml(cls, path: str | Path) -> "PrinterProfile":
@@ -107,11 +114,27 @@ class PrinterProfile:
         return profile
 
     def validate(self) -> None:
-        for name, value in asdict(self).items():
-            if name == "name":
-                continue
+        required_positive = {
+            "build_x_mm": self.build_x_mm,
+            "build_y_mm": self.build_y_mm,
+            "build_z_mm": self.build_z_mm,
+            "nozzle_mm": self.nozzle_mm,
+            "layer_height_mm": self.layer_height_mm,
+            "min_feature_mm": self.min_feature_mm,
+            "min_gap_mm": self.min_gap_mm,
+            "recommended_die_clearance_mm": self.recommended_die_clearance_mm,
+        }
+        for name, value in required_positive.items():
             if float(value) <= 0:
                 raise ValueError(f"Printer profile {name} must be > 0")
+        for name, value in {
+            "line_width_mm": self.line_width_mm,
+            "min_negative_feature_mm": self.min_negative_feature_mm,
+        }.items():
+            if value is not None and float(value) <= 0:
+                raise ValueError(f"Printer profile {name} must be > 0 when provided")
+        if self.xy_compensation_mm < 0:
+            raise ValueError("Printer profile xy_compensation_mm must be >= 0")
 
     def validate_die(self, spec: DieSpec) -> None:
         spec.validate()
@@ -137,6 +160,9 @@ def adventurer_5m_profile() -> PrinterProfile:
         min_feature_mm=0.50,
         min_gap_mm=0.45,
         recommended_die_clearance_mm=0.20,
+        line_width_mm=0.45,
+        min_negative_feature_mm=0.45,
+        xy_compensation_mm=0.0,
     )
     profile.validate()
     return profile
