@@ -22,12 +22,13 @@ The desktop app and CLI must use the **same generation backend**. Never duplicat
 - `embossforge/gui.py` — PySide6 desktop UI only; presentation and request collection belong here.
 - `embossforge/cli.py` — CLI adapter only; avoid putting geometry logic here.
 - `embossforge/artwork.py` — SVG/raster normalization and vectorization.
-- `embossforge/scad_backend.py` — reproducible die relief generation and OpenSCAD invocation.
+- `embossforge/scad_backend.py` — reproducible binary die relief generation and OpenSCAD invocation.
 - `embossforge/config.py` — die specs, printer profiles, paper presets.
 - `embossforge/mechanics/` — CadQuery cartridge and press source geometry.
 - `blender/` — visual QA/import tooling; not dimensional source of truth.
 - `profiles/` — human-editable printer profiles.
 - `tests/` — regression tests.
+- `docs/RELIEF_MODE_SPEC.md` — canonical accepted contract for planned grayscale/variable-depth relief work.
 - `docs/PHYSICAL_VALIDATION.md` — real printed validation record. Never infer physical validation from CAD/tests.
 - `packaging/` — desktop release entry points and installer definitions.
 - `.github/workflows/release-windows.yml` — self-contained Windows app/release build.
@@ -36,7 +37,8 @@ The desktop app and CLI must use the **same generation backend**. Never duplicat
 
 - Mechanical geometry must be generated from source code. Do not hand-edit generated STL/STEP/3MF files.
 - Python + CadQuery are the primary source of truth for precision mechanical parts.
-- OpenSCAD is the reproducible backend for artwork relief dies and small calibration artifacts.
+- OpenSCAD is the reproducible backend for current **binary** artwork relief dies and small calibration artifacts.
+- A future variable-depth relief backend may use a deterministic height-map/mesh path when that is more appropriate than OpenSCAD. User-facing behavior must still be driven by shared typed request/config objects and recorded in the manifest.
 - Blender is for visual inspection, presentation, ergonomic exploration, animation, and complex artistic geometry. It is not the dimensional source of truth for production parts.
 - Generated build outputs are disposable unless explicitly being packaged as release artifacts.
 
@@ -50,6 +52,25 @@ The desktop app and CLI must use the **same generation backend**. Never duplicat
 - Printer-sensitive clearances stay explicit parameters; never hide them in arbitrary mesh edits.
 - Never treat a scaled miniature as proof of full-size strength.
 - Physical validation must be recorded separately from software/CAD validation.
+
+## Variable-depth relief contract
+
+Before implementing grayscale/height-map relief, read **`docs/RELIEF_MODE_SPEC.md` in full**. It is the canonical architecture contract until explicitly superseded.
+
+Critical invariants:
+
+- Binary mode remains the default and existing binary commands/API calls must keep their behavior.
+- Relief mode is opt-in; grayscale detection may suggest it but must never silently enable it.
+- Grayscale semantics, gamma, stepping, polarity, and all paper/printer accommodations belong in shared backend data models, not UI code.
+- CLI, GUI, and Python API must build the same relief request/specification and call the same generator.
+- The female relief field must derive from the same male source field plus explicit clearance/paper/depth accommodations and the established cartridge orientation transform.
+- Paper-risk analysis is heuristic and warning-oriented. `caution`/`high` paper-risk findings are overrideable; impossible geometry is not.
+- A user override must be explicit and recorded in the generated manifest.
+- Missing manifest `schema_version` means v1. New relief work may introduce schema v2 only by preserving existing top-level manifest fields documented in the relief spec.
+- Do not claim grayscale relief is physically validated until an actual printed relief test is recorded in `docs/PHYSICAL_VALIDATION.md`.
+- Do not couple relief-mode implementation to radial rings/textures. The architecture should allow those layers later, but direct grayscale-to-height functionality lands first.
+
+If implementation choices conflict with the spec, update the spec intentionally in the same change and explain the compatibility impact. Do not silently diverge.
 
 ## Target reference hardware
 
@@ -85,6 +106,8 @@ embossforge mechanics --out build/mechanics
 
 Then inspect generated assembly metadata/collision validation. A visual Blender pass is useful for geometry that cannot be confidently reviewed numerically.
 
+For future relief-mode changes, additionally satisfy the testing contract in `docs/RELIEF_MODE_SPEC.md`, including binary backward-compatibility, tone mapping, male/female pairing, risk-report behavior, and manifest schema coverage.
+
 ## Desktop UI rules
 
 The desktop app should remain intentionally simple:
@@ -93,12 +116,21 @@ The desktop app should remain intentionally simple:
 - a preview
 - common settings visible
 - advanced settings secondary/collapsible
-- one primary `Generate die files` action
+- one primary `Generate matched die pair` action
 - clear success/error state
 - direct `Open output folder` action
 - no CAD vocabulary unless it is genuinely necessary to the user
 
-Do not make users install developer dependencies when using official binary releases. Official Windows bundles should include the OpenSCAD runtime needed for STL generation.
+For future variable-depth relief:
+
+- keep **Simple emboss** as the default;
+- expose **Variable depth** as an explicit emboss-style choice;
+- show only maximum relief, depth style, levels, and tone direction by default;
+- keep gamma/threshold/sampling controls behind a secondary disclosure;
+- summarize warnings in plain language near Generate;
+- do not call a design "safe" merely because no heuristic warning fired.
+
+Do not make users install developer dependencies when using official binary releases. Official Windows bundles should include the OpenSCAD runtime needed for current STL generation.
 
 UI work must not change geometry behavior independently of the generator service.
 
@@ -149,3 +181,5 @@ Check the relevant subset of:
 5. User-facing changes are reflected in README/docs when needed.
 6. Claims about physical performance are backed by `docs/PHYSICAL_VALIDATION.md`, not by inference.
 7. Release changes preserve a path for non-developer users to run the app without manual Python/OpenSCAD setup.
+8. Relief-mode work preserves binary behavior and follows `docs/RELIEF_MODE_SPEC.md`.
+9. Risk warnings and overrides are recorded in manifests; impossible geometry is never bypassed by `allow-risky` behavior.
