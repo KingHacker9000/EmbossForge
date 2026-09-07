@@ -3,6 +3,8 @@ name: Windows Desktop Release
 on:
   workflow_dispatch:
   push:
+    branches:
+      - "desktop-release-preview"
     tags:
       - "v*"
 
