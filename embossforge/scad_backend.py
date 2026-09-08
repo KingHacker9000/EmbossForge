@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 
 from .config import DieSpec
+
+
+DEFAULT_OPENSCAD_TIMEOUT_SECONDS = 180
 
 
 def _bundled_tool_candidates() -> list[Path]:
@@ -42,8 +46,24 @@ def find_openscad() -> Path | None:
     return None
 
 
+def _render_timeout_seconds() -> int:
+    raw = os.environ.get("EMBOSSFORGE_OPENSCAD_TIMEOUT", "").strip()
+    if not raw:
+        return DEFAULT_OPENSCAD_TIMEOUT_SECONDS
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_OPENSCAD_TIMEOUT_SECONDS
+    return max(30, value)
+
+
 def render_scad(source_scad: str | Path, output_stl: str | Path) -> Path:
-    """Render one OpenSCAD source file to STL using local or bundled OpenSCAD."""
+    """Render one OpenSCAD source file to STL using local or bundled OpenSCAD.
+
+    Each render is bounded so a pathological height field cannot leave the desktop
+    stuck at "Generating…" forever. Advanced users can override the timeout with
+    EMBOSSFORGE_OPENSCAD_TIMEOUT (seconds).
+    """
     openscad = find_openscad()
     if openscad is None:
         raise RuntimeError(
@@ -53,7 +73,7 @@ def render_scad(source_scad: str | Path, output_stl: str | Path) -> Path:
     source = Path(source_scad)
     output = Path(output_stl)
     output.parent.mkdir(parents=True, exist_ok=True)
-    _render(openscad, source, output)
+    _render(openscad, source, output, timeout_seconds=_render_timeout_seconds())
     return output
 
 
@@ -193,13 +213,28 @@ difference() {{
 """
 
 
-def _render(openscad: Path, source_scad: Path, output_stl: Path) -> None:
-    result = subprocess.run(
-        [str(openscad), "-o", str(output_stl), str(source_scad)],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+def _render(
+    openscad: Path,
+    source_scad: Path,
+    output_stl: Path,
+    *,
+    timeout_seconds: int,
+) -> None:
+    try:
+        result = subprocess.run(
+            [str(openscad), "-o", str(output_stl), str(source_scad)],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output_stl.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"OpenSCAD timed out after {timeout_seconds}s rendering {source_scad.name}. "
+            "For a variable-depth die, retry with Height-map quality = Draft, fewer height levels, "
+            "or a simpler/cleaner height map."
+        ) from exc
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or "OpenSCAD failed without diagnostic output"
         raise RuntimeError(f"OpenSCAD failed rendering {source_scad.name}: {message}")
