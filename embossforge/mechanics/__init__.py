@@ -9,7 +9,7 @@ from .cad import (
     mechanical_layout,
     validate_assembly_clearance,
 )
-from .handheld import (
+from .handheld_compact import (
     HandLeverSpec,
     build_hand_lever,
     build_hand_lever_assembly,
