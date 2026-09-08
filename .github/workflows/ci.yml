@@ -45,6 +45,25 @@ jobs:
           embossforge doctor
           embossforge butterfly-test --out build/ci-butterfly
 
+      - name: Primary handheld lever press smoke test
+        run: |
+          embossforge lever-press --out build/ci-lever-press
+          test -s build/ci-lever-press/body.stl
+          test -s build/ci-lever-press/upper_carriage.stl
+          test -s build/ci-lever-press/upper_backing_cap.stl
+          test -s build/ci-lever-press/lever.stl
+          test -s build/ci-lever-press/lever_press_manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("build/ci-lever-press/lever_press_manifest.json").read_text())
+          assert manifest["mode"] == "full-size-handheld-lever-embosser"
+          assert manifest["exact_die_contract_mm"]["diameter"] == 42.0
+          assert manifest["derived"]["nominal_lever_ratio"] > 6.5
+          assert manifest["collision_validation"] == {"closed": [], "open": []}
+          print("handheld lever press smoke OK")
+          PY
+
       - name: Butterfly micro-tongs smoke test
         run: |
           embossforge micro-press --out build/ci-micro-press
