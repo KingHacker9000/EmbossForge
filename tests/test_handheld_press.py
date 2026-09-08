@@ -1,6 +1,6 @@
 import pytest
 
-from embossforge.mechanics.handheld import (
+from embossforge.mechanics.handheld_compact import (
     build_hand_lever,
     build_hand_lever_body,
     build_upper_backing_cap,
@@ -27,11 +27,13 @@ def test_handheld_press_has_useful_leverage_and_opening():
     die = standard_handheld_die_spec()
     spec = hand_lever_spec()
 
+    assert spec.drive_y_offset_mm < 0
     assert spec.nominal_lever_ratio > 6.5
     assert 25.0 < spec.open_angle_deg < 55.0
     assert spec.open_travel_mm >= 12.0
     assert spec.closed_carriage_bottom_z_mm(die) > spec.base_thickness_mm
     assert spec.stem_pin_local_z_mm(die) > spec.carriage_thickness_mm
+    assert spec.drive_lift_mm(spec.open_angle_deg) == pytest.approx(spec.open_travel_mm, abs=0.01)
 
 
 def test_handheld_printed_parts_are_valid_solids():
@@ -52,8 +54,9 @@ def test_handheld_open_and_closed_states_have_no_unintended_collisions():
     assert report == {"closed": [], "open": []}
 
 
-def test_upper_carriage_has_side_clearance_inside_guides():
+def test_upper_carriage_has_printable_side_clearance_inside_guides():
     spec = hand_lever_spec()
-    inside_gap = spec.body_width_mm - 2 * spec.guide_wall_thickness_mm
-    assert inside_gap - spec.carriage_width_mm == pytest.approx(0.0, abs=2.0)
+    guide_inside_width = spec.carriage_width_mm + 2 * spec.guide_clearance_mm
+    guide_outside_width = guide_inside_width + 2 * spec.guide_wall_thickness_mm
+    assert guide_outside_width <= spec.body_width_mm
     assert spec.guide_clearance_mm >= 0.25
