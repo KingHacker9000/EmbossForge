@@ -15,18 +15,17 @@ QtWidgets = legacy.QtWidgets
 
 
 class MainWindow(legacy.MainWindow):
-    """Production desktop window with the completed vNext relief workflow.
-
-    The existing polished UI remains the base implementation. This subclass only
-    changes relief-source behavior: shaded references are supported through a
-    deterministic, inspectable conversion and require an explicit preview/accept
-    step before STL rendering.
-    """
+    """Production desktop window with the completed vNext relief workflow."""
 
     def __init__(self):
         self._pending_shaded_request = None
         self._preview_only = False
+        self._generation_elapsed_s = 0
+        self._generation_timer = None
         super().__init__()
+        self._generation_timer = QtCore.QTimer(self)
+        self._generation_timer.setInterval(1000)
+        self._generation_timer.timeout.connect(self._tick_generation_status)
 
     def _style_changed(self) -> None:
         self._pending_shaded_request = None
@@ -81,9 +80,6 @@ class MainWindow(legacy.MainWindow):
 
         full_request = replace(request, render_stl=True)
         if self._pending_shaded_request is not None:
-            # A preview may have required an explicit paper-risk override. Preserve
-            # that accepted risk bit when comparing against the freshly collected
-            # UI request so accepting the preview does not force a second preview.
             candidate = replace(
                 full_request,
                 allow_risky=self._pending_shaded_request.allow_risky,
@@ -93,16 +89,16 @@ class MainWindow(legacy.MainWindow):
                 self._start_generation(candidate, preview_only=False)
                 return
 
-        # First pass converts + validates the reference but deliberately stops
-        # before STL rendering so the user can inspect the machine interpretation.
         self._pending_shaded_request = None
         self._start_generation(replace(request, render_stl=False), preview_only=True)
 
     def _start_generation(self, request, preview_only: bool = False) -> None:
         self._preview_only = preview_only
+        self._generation_elapsed_s = 0
+        if self._generation_timer is not None:
+            self._generation_timer.start()
         super()._start_generation(request)
         if preview_only:
-            # Base setup owns worker/cursor bookkeeping; override only the copy.
             self.generate_button.setText("Deriving preview…")
             self.message.setText(
                 "Interpreting the shaded reference into an emboss-oriented height map and validating the matched pair…"
@@ -110,6 +106,43 @@ class MainWindow(legacy.MainWindow):
             self.message.setProperty("state", "working")
             self.validation_message.setText("Deriving shared relief geometry before STL rendering…")
             self._refresh_style(self.message)
+        elif request.artwork_mode == ArtworkMode.RELIEF:
+            self.generate_button.setText("Rendering die STLs…")
+            self.message.setText(
+                "Building the shared height field, then rendering the male and female STL. Variable-depth OpenSCAD rendering can take a little while."
+            )
+            self.message.setProperty("state", "working")
+            self._refresh_style(self.message)
+
+    def _tick_generation_status(self) -> None:
+        if self.worker is None:
+            if self._generation_timer is not None:
+                self._generation_timer.stop()
+            return
+        self._generation_elapsed_s += 1
+        if self._preview_only:
+            if self._generation_elapsed_s >= 15:
+                self.validation_message.setText(
+                    f"Still deriving/validating the relief preview… {self._generation_elapsed_s}s elapsed."
+                )
+            return
+
+        request = self._last_request
+        if request is not None and request.artwork_mode == ArtworkMode.RELIEF:
+            if self._generation_elapsed_s >= 90:
+                self.validation_message.setText(
+                    f"OpenSCAD is still rendering the relief surfaces… {self._generation_elapsed_s}s elapsed. "
+                    "Each render now has a 180s safety timeout. Draft height-map quality is the fastest retry option."
+                )
+            elif self._generation_elapsed_s >= 20:
+                self.validation_message.setText(
+                    f"Rendering variable-depth geometry… {self._generation_elapsed_s}s elapsed. This is slower than simple embossing."
+                )
+
+    def _worker_finished(self) -> None:
+        if self._generation_timer is not None:
+            self._generation_timer.stop()
+        super()._worker_finished()
 
     def _generated(self, result) -> None:
         if self._preview_only and result.source_interpretation == SourceInterpretation.SHADED_REFERENCE:
@@ -154,8 +187,6 @@ class MainWindow(legacy.MainWindow):
         was_preview = self._preview_only
         self._preview_only = False
 
-        # During the preview pass, a high paper-risk confirmation must retry the
-        # SCAD-only preview request—not jump ahead to final STL generation.
         if was_preview and "high experimental paper-risk" in message and self._last_request is not None:
             self.message.setText(
                 "The derived geometry can mate, but EmbossForge found a high experimental paper-damage risk."
