@@ -57,7 +57,7 @@ jobs:
           import json
           from pathlib import Path
           manifest = json.loads(Path("build/ci-lever-press/lever_press_manifest.json").read_text())
-          assert manifest["mode"] == "full-size-handheld-lever-embosser"
+          assert manifest["mode"] == "full-size-handheld-lever-embosser-v2"
           assert manifest["exact_die_contract_mm"]["diameter"] == 42.0
           assert manifest["derived"]["nominal_lever_ratio"] > 6.5
           assert manifest["collision_validation"] == {"closed": [], "open": []}
