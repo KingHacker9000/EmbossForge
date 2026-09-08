@@ -12,6 +12,7 @@ from .generator import DieGenerationRequest, generate_die
 from .mechanics import (
     CartridgeSpec,
     PressSpec,
+    export_hand_lever_press_pack,
     export_micro_press_pack,
     export_mini_test_pack,
     export_press_pack,
@@ -117,7 +118,27 @@ def build_parser() -> argparse.ArgumentParser:
     calibration.add_argument("--out", type=Path, default=Path("build") / "calibration", help="Output directory")
     calibration.add_argument("--scad-only", action="store_true", help="Generate OpenSCAD source but do not render STL")
 
-    mechanics = sub.add_parser("mechanics", help="Generate the V0.2 cartridge and lever-press prototype")
+    lever_press = sub.add_parser(
+        "lever-press",
+        help="Generate the primary compact handheld lever embosser for standard 42 mm dies",
+    )
+    lever_press.add_argument(
+        "--out",
+        type=Path,
+        default=Path("build") / "lever-press",
+        help="Output directory",
+    )
+    lever_press.add_argument(
+        "--die-clearance",
+        type=float,
+        default=0.15,
+        help="Per-side clearance around the standard 42 mm keyed die in mm",
+    )
+
+    mechanics = sub.add_parser(
+        "mechanics",
+        help="Generate the older V0.2 rod-guided laboratory press prototype",
+    )
     mechanics.add_argument("--out", type=Path, default=Path("build") / "mechanics", help="Output directory")
     mechanics.add_argument("--die-diameter", type=float, default=42.0, help="Compatible die diameter in mm")
     mechanics.add_argument("--slide-clearance", type=float, default=0.25, help="Cartridge/receiver per-side clearance in mm")
@@ -133,14 +154,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     micro = sub.add_parser(
         "micro-press",
-        help="Generate the tiny lever press made specifically for the 16 mm butterfly-test dies",
+        help="Generate the one-piece PLA flexure tongs for the existing 16 mm butterfly-test dies",
     )
     micro.add_argument("--out", type=Path, default=Path("build") / "micro-press", help="Output directory")
-    micro.add_argument("--slide-clearance", type=float, default=0.25, help="Per-side cartridge/receiver clearance in mm")
     micro.add_argument(
         "--die-clearance",
         type=float,
-        default=0.18,
+        default=0.15,
         help="Per-side clearance around the already-printed 16 mm butterfly die in mm",
     )
 
@@ -171,6 +191,8 @@ def main(argv: list[str] | None = None) -> int:
             return _die(args)
         if args.command == "calibrate":
             return _calibrate(args)
+        if args.command == "lever-press":
+            return _lever_press(args)
         if args.command == "mechanics":
             return _mechanics(args)
         if args.command == "mini-test":
@@ -302,6 +324,21 @@ def _calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _lever_press(args: argparse.Namespace) -> int:
+    outputs = export_hand_lever_press_pack(
+        args.out,
+        die_pocket_clearance_mm=args.die_clearance,
+    )
+    print("Generated primary 42 mm handheld lever embosser")
+    print("  mechanism: compact guided upper jaw + forked hand lever")
+    print("  compatible dies: standard 42 mm EmbossForge keyed male/female pair")
+    print("  hardware: 1 x M6 pivot, 1 x M5 drive pin, 2 x M3 cap screws")
+    print("  NOTE: this first full-size handheld revision is CAD-validated but not yet physically strength-validated")
+    for key, path in outputs.items():
+        print(f"  {key}: {path}")
+    return 0
+
+
 def _mechanics(args: argparse.Namespace) -> int:
     cartridge = CartridgeSpec(
         die_diameter_mm=args.die_diameter,
@@ -310,7 +347,7 @@ def _mechanics(args: argparse.Namespace) -> int:
     press = PressSpec(pivot_diameter_mm=args.pivot)
     outputs = export_press_pack(args.out, cartridge=cartridge, press=press)
 
-    print("Generated V0.2 mechanical prototype")
+    print("Generated older V0.2 rod-guided laboratory prototype")
     print(f"  nominal lever ratio: {press.nominal_lever_ratio:.2f}:1")
     for key, path in outputs.items():
         print(f"  {key}: {path}")
@@ -333,14 +370,12 @@ def _mini_test(args: argparse.Namespace) -> int:
 def _micro_press(args: argparse.Namespace) -> int:
     outputs = export_micro_press_pack(
         args.out,
-        slide_clearance_mm=args.slide_clearance,
         die_pocket_clearance_mm=args.die_clearance,
     )
-    print("Generated Micro Embosser for the existing 16 mm butterfly-test die pair")
+    print("Generated one-piece PLA Micro Embosser tongs for the existing 16 mm butterfly pair")
     print("  die compatibility: exact butterfly-test diameter/base/key contract")
-    print("  hardware: 2 x 3 mm guide rods, M3-class main pivot, M2.5-class roller pin")
-    print("  NOTE: low-force alignment/emboss validation only; not a strength test")
-    print("  IMPORTANT: print one cartridge first and verify the already-printed butterfly die fit")
+    print("  hardware: none")
+    print("  NOTE: flexure/tong geometry is a low-force physical prototype")
     for key, path in outputs.items():
         print(f"  {key}: {path}")
     return 0
