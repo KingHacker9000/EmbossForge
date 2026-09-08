@@ -9,23 +9,26 @@ This design replaces the old rod-guided laboratory press as the recommended ever
 The handheld press follows the layout of a conventional desk/hand embosser:
 
 ```text
-                 long hand lever
-        =================================
+             rear hand grip
+      ===============================
                     o  M6 pivot
-                   / \
-                  /   o M5 drive pin
-                 /    │
-             ┌───────────────┐
-             │ upper carriage│
-             │ female die ↓  │
-             └───────┬───────┘
-                     paper
-             ┌───────┴───────┐
-             │  male die ↑    │
-        _____└───────────────┘____________ body/base
+             o M5 drive pin
+             │
+       narrow rear carriage tongue
+             │
+        ┌───────────────┐
+        │ upper carriage│
+        │ female die ↓  │
+        └───────┬───────┘
+                paper
+        ┌───────┴───────┐
+        │  male die ↑    │
+   _____└───────────────┘____________ body/base
 ```
 
-The lever is forked around a central carriage stem. A transverse M5-class pin connects the fork to the stem. Opening the handle lifts the carriage; closing it drives the carriage vertically so the two die faces stay parallel near engagement. Positive body stops set nominal closure rather than relying on the user to crush the printed dies together.
+The handle and carriage drive pin are deliberately on the **same side of the pivot**. Opening the handle raises both the grip and drive pin, lifting the upper carriage; closing the handle drives the carriage down. This corrected v2 linkage avoids the reversed-motion problem that a simple opposite-side lever would create.
+
+The lever is forked around a narrow carriage stem/tongue. A transverse M5-class pin connects the fork to the stem. Compact side guides keep the upper die parallel near engagement. Positive body stops set nominal closure rather than relying on the user to crush the printed dies together.
 
 ## Generate
 
@@ -90,12 +93,12 @@ The M3 carriage holes are 2.6 mm prototype pilot holes intended for plastic self
 
 ## Nominal mechanism
 
-Current defaults are approximately:
+Current corrected-v2 defaults are approximately:
 
-- body footprint: **62 × 135 mm**;
+- body footprint: **70 × 120 mm**;
 - standard die: **42 mm**;
 - upper-carriage travel: **14 mm**;
-- open handle angle: about **40°**;
+- open handle angle: roughly **high-30s to low-40s degrees**;
 - nominal mechanical ratio: greater than **6.5:1**;
 - no exposed guide rods or large top bridge.
 
