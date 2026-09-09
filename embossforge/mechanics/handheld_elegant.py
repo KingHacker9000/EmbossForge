@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,6 @@ def _cq():
 
 
 def elegant_lever_spec(*, die_pocket_clearance_mm: float = 0.15) -> HandLeverSpec:
-    """Kinematics shared with V2, with dimensions tuned for the sculpted V3 shell."""
     spec = hand_lever_spec(die_pocket_clearance_mm=die_pocket_clearance_mm)
     spec.validate(standard_handheld_die_spec())
     return spec
@@ -46,90 +46,129 @@ def _keyed_cut(die: DieSpec, spec: HandLeverSpec, depth_mm: float, z0: float):
     return circle.union(tab).translate((0, spec.die_center_y_mm, z0))
 
 
-def _xy_hull(points: list[tuple[float, float, float]], height: float):
-    """Smooth 2D hull of circles in XY, then extrude +Z."""
+def _polygon_extrude(plane: str, points: list[tuple[float, float]], distance: float, *, both: bool = False):
     cq = _cq()
-    wp = cq.Workplane("XY")
-    for x, y, r in points:
-        wp = wp.moveTo(x, y).circle(r)
-    return wp.hull().extrude(height)
+    if len(points) < 3:
+        raise ValueError("profile requires at least three points")
+    return cq.Workplane(plane).polyline(points).close().extrude(distance, both=both)
 
 
-def _yz_hull(points: list[tuple[float, float, float]], width: float, *, x_center: float = 0.0):
-    """Smooth side silhouette built from tangent circular stations."""
-    cq = _cq()
-    wp = cq.Workplane("YZ")
-    for y, z, r in points:
-        wp = wp.moveTo(y, z).circle(r)
-    return wp.hull().extrude(width / 2.0, both=True).translate((x_center, 0, 0))
-
-
-def _shallow_side_recess(
-    points: list[tuple[float, float, float]],
+def _tapered_oval_xy(
+    center_y: float,
+    y_radius: float,
+    rear_halfwidth: float,
+    front_halfwidth: float,
+    height: float,
     *,
-    x_center: float,
-    depth: float,
+    samples: int = 96,
 ):
-    return _yz_hull(points, depth, x_center=x_center)
+    points: list[tuple[float, float]] = []
+    for i in range(samples):
+        a = 2.0 * math.pi * i / samples
+        y = center_y + y_radius * math.sin(a)
+        blend = (y - (center_y - y_radius)) / (2.0 * y_radius)
+        halfwidth = rear_halfwidth + (front_halfwidth - rear_halfwidth) * blend
+        x = halfwidth * math.cos(a)
+        points.append((x, y))
+    return _polygon_extrude("XY", points, height)
+
+
+def _ellipse_yz(
+    center_y: float,
+    center_z: float,
+    radius_y: float,
+    radius_z: float,
+    width: float,
+    *,
+    x_center: float = 0.0,
+    samples: int = 96,
+):
+    points = [
+        (
+            center_y + radius_y * math.cos(2.0 * math.pi * i / samples),
+            center_z + radius_z * math.sin(2.0 * math.pi * i / samples),
+        )
+        for i in range(samples)
+    ]
+    return _polygon_extrude("YZ", points, width / 2.0, both=True).translate((x_center, 0, 0))
+
+
+def _lever_profile(spec: HandLeverSpec):
+    samples = 80
+    upper: list[tuple[float, float]] = []
+    lower: list[tuple[float, float]] = []
+    rear_y = -155.0
+    front_y = 8.0
+    for i in range(samples + 1):
+        t = i / samples
+        y = rear_y + (front_y - rear_y) * t
+        zc = 19.0 * (1.0 - t) ** 1.15
+        radius = 9.0 + 2.6 * (1.0 - t) ** 4 + 1.5 * t**5
+        upper.append((y, zc + radius))
+        lower.append((y, zc - radius))
+    return _polygon_extrude("YZ", upper + list(reversed(lower)), spec.lever_width_mm / 2.0, both=True)
+
+
+def _yz_capsule(y0: float, y1: float, z: float, radius: float, width: float):
+    cq = _cq()
+    yc = (y0 + y1) / 2.0
+    length = abs(y1 - y0)
+    bar = (
+        cq.Workplane("YZ")
+        .center(yc, z)
+        .rect(max(length, 0.01), 2.0 * radius)
+        .extrude(width / 2.0, both=True)
+    )
+    for y in (y0, y1):
+        cap = (
+            cq.Workplane("YZ")
+            .center(y, z)
+            .circle(radius)
+            .extrude(width / 2.0, both=True)
+        )
+        bar = bar.union(cap)
+    return bar
 
 
 def build_elegant_body(spec: HandLeverSpec | None = None, die: DieSpec | None = None):
-    """Curved one-piece body with hidden straight guide faces for the upper platen."""
     spec = spec or elegant_lever_spec()
     die = die or standard_handheld_die_spec()
     spec.validate(die)
     cq = _cq()
 
-    # Rounded/tapered footprint. The wide front supports the 42 mm die while the
-    # rear narrows visually like a commercial desk embosser.
-    base = _xy_hull(
-        [
-            (0.0, -43.0, 23.0),
-            (0.0, -16.0, 27.0),
-            (0.0, 28.0, 31.0),
-        ],
-        spec.base_thickness_mm,
+    base = _tapered_oval_xy(
+        center_y=-1.0,
+        y_radius=61.0,
+        rear_halfwidth=23.0,
+        front_halfwidth=31.5,
+        height=spec.base_thickness_mm,
     )
 
-    # A circular lower platen visually separates the replaceable die from the body.
-    lower_outer_d = 56.0
     lower = (
         cq.Workplane("XY")
         .center(0, spec.die_center_y_mm)
-        .circle(lower_outer_d / 2)
+        .circle(28.0)
         .extrude(spec.lower_jaw_height_mm)
         .translate((0, 0, spec.base_thickness_mm))
     )
     body = base.union(lower)
 
-    # Side cheeks use an organic outer hull and a large inner aperture. They are
-    # positioned so their inner faces remain the same precise guide surfaces used
-    # by the mechanically validated V2 carriage.
     cheek_t = spec.guide_wall_thickness_mm
     guide_inner_x = spec.carriage_width_mm / 2 + spec.guide_clearance_mm
     cheek_x = guide_inner_x + cheek_t / 2
-    outer_profile = [
-        (-35.0, 14.0, 12.0),
-        (-23.0, 31.0, 16.0),
-        (-8.0, 43.0, 15.0),
-        (17.0, 38.0, 17.0),
-        (39.0, 27.0, 15.0),
-        (48.0, 16.0, 10.0),
-    ]
-    inner_profile = [
-        (-18.0, 18.0, 8.0),
-        (2.0, 24.0, 12.0),
-        (27.0, 23.0, 13.0),
-        (42.0, 18.0, 7.0),
-    ]
 
     for sign in (-1, 1):
-        shell = _yz_hull(outer_profile, cheek_t, x_center=sign * cheek_x)
-        opening = _yz_hull(inner_profile, cheek_t + 2.0, x_center=sign * cheek_x)
-        shell = shell.cut(opening)
+        outer = _ellipse_yz(-1.0, 29.0, 54.0, 30.0, cheek_t, x_center=sign * cheek_x)
+        inner = _ellipse_yz(8.0, 25.0, 41.0, 17.0, cheek_t + 2.0, x_center=sign * cheek_x)
+        cheek = outer.cut(inner)
 
-        # Precision rail hidden inside the sculpted cheek. This intentionally keeps
-        # the printer-fit contract independent from the cosmetic outer silhouette.
+        trim = (
+            cq.Workplane("XY")
+            .box(spec.body_width_mm + 20.0, 150.0, 20.0, centered=(True, True, False))
+            .translate((0, 0, -20.0))
+        )
+        cheek = cheek.cut(trim)
+
         guide_d = spec.guide_front_y_mm - spec.guide_rear_y_mm
         guide_y = (spec.guide_front_y_mm + spec.guide_rear_y_mm) / 2
         guide = (
@@ -138,20 +177,12 @@ def build_elegant_body(spec: HandLeverSpec | None = None, die: DieSpec | None = 
             .box(cheek_t, guide_d, spec.guide_height_mm, centered=(True, True, False))
             .translate((0, 0, spec.base_thickness_mm))
         )
-        body = body.union(shell).union(guide)
+        body = body.union(cheek).union(guide)
 
-        # Shallow flowing side accent. It is decorative only and never intersects
-        # the precision guide face.
-        accent_x = sign * (cheek_x + cheek_t / 2 - 0.45)
-        accent = _shallow_side_recess(
-            [(-21.0, 31.0, 2.2), (3.0, 37.0, 2.0), (24.0, 32.0, 1.8)],
-            x_center=accent_x,
-            depth=0.9,
-        )
+        accent_x = sign * (cheek_x + cheek_t / 2 - 0.4)
+        accent = _ellipse_yz(2.0, 37.0, 20.0, 3.0, 0.8, x_center=accent_x)
         body = body.cut(accent)
 
-    # Closure pads are tucked into the body aperture and stop the upper platen at
-    # nominal paper engagement rather than crushing the dies together.
     stop_h = spec.closed_carriage_bottom_z_mm(die) - spec.base_thickness_mm
     for sign in (-1, 1):
         stop = (
@@ -162,7 +193,6 @@ def build_elegant_body(spec: HandLeverSpec | None = None, die: DieSpec | None = 
         )
         body = body.union(stop)
 
-    # Exact standard keyed 42 mm lower-die socket.
     pocket_depth = die.base_thickness_mm + spec.die_seat_extra_depth_mm
     pocket_z = spec.base_thickness_mm + spec.lower_jaw_height_mm - pocket_depth
     body = body.cut(_keyed_cut(die, spec, pocket_depth + 0.05, pocket_z))
@@ -175,7 +205,6 @@ def build_elegant_body(spec: HandLeverSpec | None = None, die: DieSpec | None = 
     )
     body = body.cut(notch)
 
-    # Pivot bore through both side cheeks.
     pivot = (
         cq.Workplane("YZ")
         .center(spec.pivot_y_mm, spec.pivot_z_mm)
@@ -186,21 +215,17 @@ def build_elegant_body(spec: HandLeverSpec | None = None, die: DieSpec | None = 
 
 
 def build_elegant_upper_carriage(spec: HandLeverSpec | None = None, die: DieSpec | None = None):
-    """Round upper platen with guide ears and a narrow rear drive stem."""
     spec = spec or elegant_lever_spec()
     die = die or standard_handheld_die_spec()
     spec.validate(die)
     cq = _cq()
 
-    plate_d = 56.0
     plate = (
         cq.Workplane("XY")
         .center(0, spec.die_center_y_mm)
-        .circle(plate_d / 2)
+        .circle(28.0)
         .extrude(spec.carriage_thickness_mm)
     )
-
-    # Short rectangular guide ears are mostly hidden between the body cheeks.
     ears = (
         cq.Workplane("XY")
         .center(0, spec.die_center_y_mm)
@@ -210,15 +235,14 @@ def build_elegant_upper_carriage(spec: HandLeverSpec | None = None, die: DieSpec
     carriage = carriage.cut(_keyed_cut(die, spec, spec.carriage_thickness_mm + 0.4, -0.2))
 
     stem_y = spec.drive_pin_world_y_mm()
-    plate_rear = spec.die_center_y_mm - plate_d / 2
-    # A tapered-looking neck formed by a hull of two circles, then clipped to the
-    # narrow stem width near the lever fork.
-    neck = _xy_hull(
-        [
-            (0.0, plate_rear + 4.0, 7.0),
-            (0.0, stem_y + 4.0, 6.0),
-        ],
-        spec.carriage_thickness_mm,
+    plate_rear = spec.die_center_y_mm - 28.0
+    neck_center = (plate_rear + stem_y) / 2.0
+    neck_len = abs(plate_rear - stem_y) + 12.0
+    neck = (
+        cq.Workplane("XY")
+        .center(0, neck_center)
+        .ellipse(7.0, neck_len / 2.0)
+        .extrude(spec.carriage_thickness_mm)
     )
     carriage = carriage.union(neck)
 
@@ -258,20 +282,17 @@ def build_elegant_upper_carriage(spec: HandLeverSpec | None = None, die: DieSpec
 
 
 def build_elegant_upper_cap(spec: HandLeverSpec | None = None, die: DieSpec | None = None):
-    """Round backing cap; print flat and install boss-down."""
     spec = spec or elegant_lever_spec()
     die = die or standard_handheld_die_spec()
     spec.validate(die)
     cq = _cq()
 
-    cap_d = 54.0
     cap = (
         cq.Workplane("XY")
         .center(0, spec.die_center_y_mm)
-        .circle(cap_d / 2)
+        .circle(27.0)
         .extrude(spec.cap_thickness_mm)
     )
-    # Small screw ears preserve the two-screw retention without a rectangular cap.
     ears = (
         cq.Workplane("XY")
         .center(0, spec.die_center_y_mm)
@@ -298,37 +319,18 @@ def build_elegant_upper_cap(spec: HandLeverSpec | None = None, die: DieSpec | No
 
 
 def build_elegant_lever(spec: HandLeverSpec | None = None):
-    """Sweeping ergonomic forked lever with recessed side grip panels."""
     spec = spec or elegant_lever_spec()
     spec.validate(standard_handheld_die_spec())
     cq = _cq()
 
-    # Circular stations create a continuously flowing side silhouette without the
-    # slab-like appearance of V2. The rear rises gently into a broad palm grip.
-    lever = _yz_hull(
-        [
-            (6.0, 0.0, 10.0),
-            (-22.0, 1.5, 10.5),
-            (-55.0, 6.0, 10.0),
-            (-92.0, 12.0, 9.5),
-            (-128.0, 17.0, 10.5),
-            (-150.0, 19.0, 12.0),
-        ],
-        spec.lever_width_mm,
-    )
+    lever = _lever_profile(spec)
 
-    # Central fork slot clears the upper carriage stem while leaving strong side arms.
     slot_y0 = spec.lever_fork_rear_mm - 3.0
     slot_y1 = spec.lever_fork_front_mm + 2.0
     slot = (
         cq.Workplane("XY")
-        .box(
-            spec.lever_fork_slot_width_mm,
-            slot_y1 - slot_y0,
-            34.0,
-            centered=(True, True, True),
-        )
-        .translate((0, (slot_y0 + slot_y1) / 2, -1.0))
+        .box(spec.lever_fork_slot_width_mm, slot_y1 - slot_y0, 40.0, centered=(True, True, True))
+        .translate((0, (slot_y0 + slot_y1) / 2.0, -1.0))
     )
     lever = lever.cut(slot)
 
@@ -339,31 +341,19 @@ def build_elegant_lever(spec: HandLeverSpec | None = None):
     )
     lever = lever.cut(pivot)
 
-    # A slightly elongated cam slot gives the M5 carriage pin room to follow the
-    # lever's small fore/aft arc while the carriage itself remains vertically guided.
-    slot_half = 1.6
-    drive_r = spec.drive_pin_diameter_mm / 2
-    drive = (
-        cq.Workplane("YZ")
-        .moveTo(spec.drive_y_offset_mm - slot_half, spec.drive_z_offset_mm)
-        .circle(drive_r)
-        .moveTo(spec.drive_y_offset_mm + slot_half, spec.drive_z_offset_mm)
-        .circle(drive_r)
-        .hull()
-        .extrude(spec.lever_width_mm + 4, both=True)
+    drive = _yz_capsule(
+        spec.drive_y_offset_mm - 1.6,
+        spec.drive_y_offset_mm + 1.6,
+        spec.drive_z_offset_mm,
+        spec.drive_pin_diameter_mm / 2.0,
+        spec.lever_width_mm + 4.0,
     )
     lever = lever.cut(drive)
 
-    # Recessed side panels echo the dark grip insert in the target concept. Users can
-    # paint or filament-swap these recesses without needing another structural part.
-    grip_profile = [
-        (-72.0, 11.0, 4.0),
-        (-103.0, 15.0, 4.5),
-        (-133.0, 18.0, 5.0),
-    ]
-    side_x = spec.lever_width_mm / 2 - 0.55
-    lever = lever.cut(_shallow_side_recess(grip_profile, x_center=side_x, depth=1.1))
-    lever = lever.cut(_shallow_side_recess(grip_profile, x_center=-side_x, depth=1.1))
+    for sign in (-1, 1):
+        x = sign * (spec.lever_width_mm / 2.0 - 0.45)
+        recess = _ellipse_yz(-108.0, 17.0, 38.0, 5.2, 0.9, x_center=x)
+        lever = lever.cut(recess)
     return lever
 
 
@@ -478,7 +468,7 @@ def export_elegant_lever_press_pack(
     masses = {name: round(_solid_mass_g(part), 2) for name, part in parts.items()}
     manifest = {
         "mode": "full-size-elegant-handheld-lever-embosser-v3",
-        "design_language": "curved premium desk embosser; sculpted C-cheeks; round platens; sweeping lever",
+        "design_language": "curved premium desk embosser; sculpted oval cheeks; round platens; sweeping lever",
         "status": "CAD/software prototype; physical strength validation still required",
         "compatible_die_command": "embossforge die <artwork> --diameter 42",
         "exact_die_contract_mm": {
