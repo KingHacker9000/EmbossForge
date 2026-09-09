@@ -26,7 +26,10 @@ class DieSpec:
     base_thickness_mm: float = 3.0
     relief_height_mm: float = 0.65
     female_xy_clearance_mm: float = 0.20
-    female_extra_depth_mm: float = 0.20
+    # Additional Z clearance beyond the matching male relief. Paper thickness is
+    # NOT added to the cavity depth: it is already represented by the nominal
+    # face-to-face separation when the dies close around the paper.
+    female_extra_depth_mm: float = 0.05
     paper_thickness_mm: float = 0.10
     margin_mm: float = 3.0
     facets: int = 160
@@ -43,7 +46,18 @@ class DieSpec:
 
     @property
     def female_cavity_depth_mm(self) -> float:
-        return self.relief_height_mm + self.paper_thickness_mm + self.female_extra_depth_mm
+        """Depth cut into the female die from its nominal face.
+
+        The press/closure model already separates the flat male and female faces
+        by ``paper_thickness_mm``. Adding paper thickness here as well would double
+        count it and leave an air gap that prevents a crisp emboss.
+        """
+        return self.relief_height_mm + self.female_extra_depth_mm
+
+    @property
+    def nominal_feature_gap_mm(self) -> float:
+        """Nominal male-to-female surface gap while paper is installed."""
+        return self.paper_thickness_mm + self.female_extra_depth_mm
 
     @property
     def carrier_depth_mm(self) -> float:
@@ -75,7 +89,7 @@ class DieSpec:
         if self.female_cavity_depth_mm >= self.base_thickness_mm:
             raise ValueError(
                 "female cavity is deeper than the female die base; increase base thickness "
-                "or reduce relief/paper/extra depth"
+                "or reduce relief/extra depth"
             )
 
     def to_dict(self) -> dict[str, float | int]:
