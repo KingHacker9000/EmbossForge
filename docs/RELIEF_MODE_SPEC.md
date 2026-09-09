@@ -1,6 +1,6 @@
 # Variable-depth grayscale relief specification
 
-**Status:** Implemented software/CAD contract in EmbossForge 0.2. Dedicated variable-depth physical emboss calibration is still pending, so this document does not claim paper/quality validation.
+**Status:** Implemented software/CAD contract in EmbossForge 0.2. The first 42 mm variable-depth physical article exposed two important shortcomings in the earlier model: relief tiers were too shallow for the target FDM process, and paper thickness was incorrectly counted both in press closure and female cavity depth. The backend now uses the corrected engagement model below. Further physical tuning is still ongoing.
 
 Binary mode remains backward-compatible and is still the default. Relief mode is opt-in and uses an explicit sampled height field shared by the male/female pair.
 
@@ -11,10 +11,10 @@ The implemented relief path:
 1. maps raster grayscale to a deterministic normalized height field;
 2. supports authored true height maps and deterministic shaded-reference interpretation;
 3. derives both dies from one canonical printer-aware field;
-4. keeps paper thickness, XY clearance, extra female depth, and upper-die mirror explicit;
-5. separates hard geometry/mating failures from experimental paper-risk findings;
-6. records processing, sampling, validation, and source provenance in schema-v2 manifests;
-7. uses the same backend from desktop, CLI, Python API, and CI;
+4. keeps paper thickness, XY clearance, extra female Z clearance, and upper-die mirror explicit;
+5. validates both **accommodation** and **engagement** so a female cavity cannot silently be so deep that the pair closes without embossing;
+6. separates hard geometry/mating failures from experimental paper-risk findings;
+7. records processing, sampling, validation, and source provenance in schema-v2 manifests;
 8. leaves binary behavior unchanged for existing callers.
 
 ## Modes and source semantics
@@ -60,29 +60,22 @@ Reverse polarity (`light-high`):
 R0 = L
 ```
 
-Then:
+Then gamma/dead-zone processing is applied. A variable-depth job can additionally specify `min_relief_mm`, an FDM-oriented floor for non-zero geometry.
+
+For stepped relief, zero/background remains exactly zero and active pixels are mapped only to printable physical tiers between `min_relief_mm` and `max_relief_mm`.
+
+For the current Adventurer 5M / 0.4 mm physical-development path, the recommended first aggressive calibration is:
 
 ```text
-R1 = clamp(R0, 0, 1) ** gamma
-if R1 < zero_threshold:
-    R1 = 0
+background   0.00 mm
+shallow      0.40 mm
+medium       0.80 mm
+strong       1.20 mm
 ```
 
-Stepped relief with `N >= 2`:
+At a 0.20 mm slice height these correspond to 0, 2, 4, and 6 nominal layers. This is intentionally much more substantial than the earlier fractional-layer relief experiment.
 
-```text
-R = round(R1 * (N - 1)) / (N - 1)
-```
-
-Continuous relief uses `R = R1`.
-
-Physical male displacement:
-
-```text
-Hmale = R * max_relief_mm
-```
-
-Current FDM-oriented default is stepped relief with six levels. This is a workflow default, not a universal optimum.
+The Python API keeps `min_relief_mm=0` by default for authored-height-map/backward compatibility. The CLI supplies an FDM-oriented floor unless explicitly overridden with `--relief-min`.
 
 ## Sampling and printer-aware canonicalization
 
@@ -90,39 +83,45 @@ Sampling resolution is derived from physical artwork size plus the selected prin
 
 When enabled, positive relief islands/features below the selected profile's useful resolution are removed from the **shared canonical field** before female derivation. This avoids independently simplified halves.
 
-## Female derivation
+## Correct female derivation
 
-The female is intentionally more permissive than an exact negative.
+The female is derived from the same canonical male field with XY expansion for printer clearance.
 
 Conceptually:
 
 ```text
 expanded = local_max/dilation(Hmale, female_xy_clearance_mm)
-female_cavity = expanded + paper_thickness_mm + female_extra_depth_mm
+female_cavity = expanded + female_extra_depth_mm
 ```
 
-Vertical allowance applies only to active/dilated relief regions. The female is then mirrored using the established upper-cartridge transform.
+**Paper thickness is deliberately not added to `female_cavity`.** The nominal closed press already separates the two flat die faces by the selected paper thickness. Adding paper thickness again to the cavity double-counts it and creates an air gap that can allow a pair to close without forcing the paper into the female geometry.
 
-The deepest cavity must remain below the female base. Breakthrough is a hard non-overridable error.
+The resulting local male-to-female space while paper is installed is therefore approximately:
+
+```text
+paper_thickness_mm + female_extra_depth_mm
+```
+
+`female_extra_depth_mm` is a small manufacturing/fit allowance, not a second paper allowance. For the current 42 mm FDM development pair, approximately 0.03–0.05 mm is the intended starting range rather than the earlier 0.20 mm default.
+
+The female is mirrored using the established upper-cartridge transform. The deepest cavity must remain below the female base. Breakthrough is a hard non-overridable error.
 
 ## True height maps
 
-The default machine convention is:
+The machine convention is:
 
 ```text
 white = zero relief
 black = maximum relief
 ```
 
-A true height map should contain intentional geometry rather than decorative lighting. SVG tone/gradient rendering is not currently a direct variable-depth machine path; export an authored raster height map instead.
+A true height map should contain intentional geometry rather than decorative lighting. For a 42 mm / 0.4 mm nozzle emboss, broad separated regions normally reproduce much better than highly detailed metallic-render artwork.
 
 ## Shaded references
 
-`shaded-reference` uses `deterministic-shaded-reference-v1` rather than naïve brightness→Z mapping. It estimates background, isolates the motif, preserves coherent interiors across specular highlights, applies printer-aware cleanup, suppresses broad illumination, and synthesizes emboss-oriented relief from motif distance and stable local structure.
+`shaded-reference` is an interpretation path, not literal depth reconstruction. It estimates a motif and writes a derived machine height map, preview, and foreground mask.
 
-It writes an explicit derived machine height map, relief preview, and foreground mask. The manifest states that the result is **interpreted emboss relief, not reconstructed true 3D depth**.
-
-Desktop users must review/accept the derived preview before final STL rendering. See [IMAGE_INPUT_SPEC.md](IMAGE_INPUT_SPEC.md).
+For critical/expensive physical tests, inspect the derived height map carefully. If an agent/user has already authored a clean machine height map, use `height-map` directly instead of re-interpreting it as a shaded reference.
 
 ## Validation model
 
@@ -133,7 +132,9 @@ Desktop users must review/accept the derived preview before final STL rendering.
 - female base breakthrough;
 - build-volume violation;
 - failed solid/STL generation;
-- height-field accommodation failure;
+- female height-field accommodation shortfall;
+- incorrect female maximum Z allowance;
+- incorrect peak engagement gap;
 - predicted nominal exported-STL die-to-die interference.
 
 ### Experimental printability/paper-risk findings
@@ -146,79 +147,57 @@ Examples:
 - dense/deep relief;
 - profile-limited detail likely to merge/disappear.
 
-Findings use:
+`high` paper/quality risk is overrideable with `allow_risky=True` / `--allow-risky`. Hard mating/geometry errors are not.
+
+## Closure and engagement verification
+
+EmbossForge now distinguishes two different failure cases:
 
 ```text
-info
-caution
-high
-error
+1. accommodation failure
+   female too shallow/narrow -> plastic interference
+
+2. engagement failure
+   female unnecessarily too deep -> pair closes, but paper is not driven into the cavity
 ```
 
-`high` paper/quality risk is overrideable with `allow_risky=True` / `--allow-risky`. `error` and other hard mating/geometry failures are not. No-warning output is never described as guaranteed paper-safe.
-
-## Closure verification
-
-EmbossForge performs layered validation:
+Validation is layered:
 
 ```text
 source/profile preflight
         ↓
-canonical height-field accommodation
+canonical height-field accommodation + engagement
         ↓
 SCAD/STL generation
         ↓
-nominal exported-STL closure collision check
+nominal exported-STL collision check
 ```
 
-The final check transforms the upper die into nominal closure and asks OpenSCAD for intersection geometry. A meaningful die-to-die collision is a non-overridable failure.
-
-## Desktop UX
-
-Primary relief controls:
-
-- maximum relief;
-- stepped / continuous;
-- levels (stepped only);
-- tone direction.
-
-Advanced controls include gamma, dead zone, smoothing, sampling quality, printer-aware filtering, base/margin/clearance, and paper-risk override.
-
-Validation is summarized near Generate. Shaded references add the explicit derived-preview acceptance stage described above.
+A collision-free STL pair alone is not sufficient evidence of a useful emboss.
 
 ## CLI
 
-Height map:
+Recommended direct height-map starting point for the Adventurer 5M / 0.4 mm nozzle:
 
 ```powershell
-embossforge die crest.png `
+embossforge die crest_heightmap.png `
   --mode relief `
   --source-interpretation height-map `
-  --relief-max 0.35 `
+  --diameter 42 `
+  --base 3 `
+  --relief-max 1.20 `
+  --relief-min 0.40 `
   --relief-style stepped `
-  --relief-levels 6 `
+  --relief-levels 4 `
   --paper copy `
-  --profile profiles\flashforge_adventurer_5m.toml
+  --clearance 0.20 `
+  --extra-depth 0.03 `
+  --relief-quality draft `
+  --profile profiles\flashforge_adventurer_5m.toml `
+  --allow-risky
 ```
 
-Shaded reference:
-
-```powershell
-embossforge die medallion.png `
-  --mode relief `
-  --source-interpretation shaded-reference `
-  --relief-max 0.35 `
-  --paper copy `
-  --profile profiles\flashforge_adventurer_5m.toml
-```
-
-High paper-risk override:
-
-```powershell
-embossforge die aggressive.png --mode relief --source-interpretation height-map --allow-risky
-```
-
-Relevant implemented flags also include `--relief-gamma`, `--relief-polarity`, `--relief-zero-threshold`, `--relief-smoothing`, `--relief-quality`, and `--keep-subresolution-relief`.
+Use `--relief-min 0` when you intentionally want the full authored 0..max continuous/shallow response rather than the FDM-oriented active-height floor.
 
 ## Python API
 
@@ -229,53 +208,37 @@ from embossforge.relief import ArtworkMode, ReliefSpec, ReliefStyle, SourceInter
 
 result = generate_die(
     DieGenerationRequest(
-        artwork=Path("crest.png"),
+        artwork=Path("crest_heightmap.png"),
         output_root=Path("build"),
         artwork_mode=ArtworkMode.RELIEF,
         source_interpretation=SourceInterpretation.HEIGHT_MAP,
         relief=ReliefSpec(
-            max_relief_mm=0.35,
+            max_relief_mm=1.20,
+            min_relief_mm=0.40,
             style=ReliefStyle.STEPPED,
-            levels=6,
+            levels=4,
         ),
-        printer_profile=profile,
+        female_extra_depth_mm=0.03,
         paper_preset="copy",
     )
 )
 ```
 
-Existing requests without relief fields remain binary.
+## Physical status
 
-## Manifest schema v2
+Physically validated:
 
-Relief manifests preserve:
+- the simple 16 mm binary/chunky butterfly matched-die concept embossed ordinary notebook paper.
 
-- original artwork and source interpretation;
-- resolved printer/paper/clearance sources;
-- relief mapping settings;
-- sampling size and physical sample pitch;
-- validation findings and override status;
-- shaded-reference derivation provenance where applicable;
-- all output artifact paths generated by the backend.
+Physically failed and superseded:
 
-Legacy manifests without `schema_version` remain schema-v1 artifacts.
+- the first 42 mm variable-depth Butterfly-M article using shallow relief and the old double-counted female Z allowance produced essentially no useful paper mark.
 
-## Current implementation boundary
+Still to validate physically:
 
-Implemented now:
-
-- raster height maps;
-- stepped and continuous relief;
-- printer-aware filtering;
-- matched variable-height male/female SCAD/STL;
-- shaded-reference deterministic interpretation;
-- structured risk/closure validation;
-- desktop, CLI, API, CI, and Windows packaging integration.
-
-Not claimed as physically validated yet:
-
-- optimal relief depth/level spacing for different papers;
+- the corrected 0.4/0.8/1.2 mm stepped relief recipe;
+- best `female_extra_depth_mm` across papers;
 - paper tear/crease thresholds;
-- multi-height emboss quality on the reference printer.
+- intricate multi-tier artwork quality.
 
-Future enhancements such as generated radial profiles, composited texture layers, variable-depth SVG gradient rasterization, and richer 3D preview are additive conveniences, not blockers for the implemented 0.2 core relief pipeline.
+See `PHYSICAL_VALIDATION.md` for dated observations.
