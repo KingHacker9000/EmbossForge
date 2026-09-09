@@ -13,6 +13,7 @@ from .mechanics import (
     CartridgeSpec,
     PressSpec,
     export_hand_lever_press_pack,
+    export_lean_test_press_pack,
     export_micro_press_pack,
     export_mini_test_pack,
     export_press_pack,
@@ -163,6 +164,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Per-side clearance around the standard 42 mm keyed die in mm",
     )
 
+    lean_press = sub.add_parser(
+        "lever-press-test",
+        help="Generate a lower-material full-size 42 mm test press with printable PLA pins",
+    )
+    lean_press.add_argument(
+        "--out",
+        type=Path,
+        default=Path("build") / "lever-press-test",
+        help="Output directory",
+    )
+    lean_press.add_argument(
+        "--die-clearance",
+        type=float,
+        default=0.18,
+        help="Per-side clearance around the existing standard 42 mm keyed die in mm",
+    )
+
     mechanics = sub.add_parser(
         "mechanics",
         help="Generate the older V0.2 rod-guided laboratory press prototype",
@@ -221,6 +239,8 @@ def main(argv: list[str] | None = None) -> int:
             return _calibrate(args)
         if args.command == "lever-press":
             return _lever_press(args)
+        if args.command == "lever-press-test":
+            return _lever_press_test(args)
         if args.command == "mechanics":
             return _mechanics(args)
         if args.command == "mini-test":
@@ -376,6 +396,21 @@ def _lever_press(args: argparse.Namespace) -> int:
     print("  compatible dies: standard 42 mm EmbossForge keyed male/female pair")
     print("  hardware: 1 x M6 pivot, 1 x M5 drive pin, 2 x M3 cap screws")
     print("  NOTE: this first full-size handheld revision is CAD-validated but not yet physically strength-validated")
+    for key, path in outputs.items():
+        print(f"  {key}: {path}")
+    return 0
+
+
+def _lever_press_test(args: argparse.Namespace) -> int:
+    outputs = export_lean_test_press_pack(
+        args.out,
+        die_pocket_clearance_mm=args.die_clearance,
+    )
+    print("Generated lean full-size 42 mm lever-press test pack")
+    print("  compatible dies: YOUR EXISTING standard 42 mm EmbossForge keyed pair")
+    print("  extra dies: none; do not reprint the die pair")
+    print("  test hardware: printable M6-class pivot, M5-class drive pin, retainers, and 2 cap pegs included")
+    print("  final hardware recommendation: replace PLA pivot/drive pins with metal M6/M5 after mechanism validation")
     for key, path in outputs.items():
         print(f"  {key}: {path}")
     return 0
