@@ -1,39 +1,28 @@
-# Handheld Lever Embosser
+# Elegant Handheld Lever Embosser V3
 
-`embossforge lever-press` generates the primary full-size EmbossForge press: a compact hand-operated lever embosser built around the standard **42 mm keyed die pair**.
+`embossforge lever-press` now generates the primary full-size EmbossForge press: a sculpted hand-operated lever embosser built around the standard **42 mm keyed die pair**.
 
-This design replaces the old rod-guided laboratory press as the recommended everyday mechanism. The older `embossforge mechanics` command remains available for engineering experiments.
+The previous blocky V2 CAD remains in `embossforge/mechanics/handheld_compact.py` as an engineering fallback. The older rod-guided laboratory press remains available through `embossforge mechanics`.
 
-## Architecture
+## Design direction
 
-The handheld press follows the layout of a conventional desk/hand embosser:
+V3 targets the premium curved desk-embosser concept rather than a rectangular laboratory fixture. The visible geometry uses:
 
-```text
-             rear hand grip
-      ===============================
-                    o  M6 pivot
-             o M5 drive pin
-             │
-       narrow rear carriage tongue
-             │
-        ┌───────────────┐
-        │ upper carriage│
-        │ female die ↓  │
-        └───────┬───────┘
-                paper
-        ┌───────┴───────┐
-        │  male die ↑    │
-   _____└───────────────┘____________ body/base
-```
+- a rounded/tapered pill-shaped base;
+- a circular lower die platen;
+- two sculpted C-shaped side cheeks with a large central aperture;
+- hidden straight precision guide faces inside those curves;
+- a round upper die carriage and round backing cap;
+- a long sweeping ergonomic lever;
+- shallow recessed grip/side accent panels;
+- a slightly elongated M5 cam slot so the upper carriage can remain vertically guided while the lever rotates.
 
-The handle and carriage drive pin are deliberately on the **same side of the pivot**. Opening the handle raises both the grip and drive pin, lifting the upper carriage; closing the handle drives the carriage down. This corrected v2 linkage avoids the reversed-motion problem that a simple opposite-side lever would create.
-
-The lever is forked around a narrow carriage stem/tongue. A transverse M5-class pin connects the fork to the stem. Compact side guides keep the upper die parallel near engagement. Positive body stops set nominal closure rather than relying on the user to crush the printed dies together.
+The cosmetic shell and the precision mating surfaces are intentionally separated in the CAD. Curves can be refined without silently changing the die-fit contract.
 
 ## Generate
 
 ```powershell
-embossforge lever-press
+embossforge lever-press --out build\lever-press
 ```
 
 Default files:
@@ -54,70 +43,64 @@ build/lever-press/
 
 ## Compatible dies
 
-The sockets are derived from the same standard `DieSpec` used by desktop/CLI die generation:
+V3 retains the exact standard EmbossForge insert contract:
 
 - diameter: **42.0 mm**
 - base thickness: **3.0 mm**
 - orientation key: **6.0 × 2.5 mm**
 - default socket clearance: **0.15 mm per side**
 
-Generate a compatible pair with either the desktop app or:
+Generate a compatible pair with:
 
 ```powershell
 embossforge die artwork.png --diameter 42 --paper copy --profile profiles/flashforge_adventurer_5m.toml
 ```
 
-Do not scale either the press sockets or the die STLs to solve fit. Regenerate the press with an explicit clearance instead:
+Do not scale die or press STLs to solve fit. Regenerate the press instead:
 
 ```powershell
 embossforge lever-press --die-clearance 0.20
 ```
 
+## Mechanism
+
+```text
+                  curved hand lever
+          =============================
+                    o M6 pivot
+                 [cam slot]
+                    o M5 carriage pin
+                    |
+             round upper platen
+                female die ↓
+             -----------------
+                    paper
+             -----------------
+                 male die ↑
+             round lower platen
+          ___ sculpted curved body ___
+```
+
+The upper platen is still positively guided near engagement so the die faces remain parallel. Positive closure pads set nominal paper engagement. The M5 carriage pin runs in a short elongated lever slot to tolerate the small fore/aft component of the lever arc rather than forcing the vertical carriage to bind.
+
 ## Die loading
 
-The lower male die drops into the keyed recess in the body with the artwork facing **up** and the orientation tab toward **+Y / the front paper-insertion nose**.
+The lower male die drops into the keyed recess in the body with artwork facing **up** and the key toward **+Y / the front paper-insertion nose**.
 
-The female die is installed face **down** in the through-pocket of the upper carriage. Flip the printed female die **180° about Y** so its orientation tab still points toward the front. The removable backing cap clamps the die from above with a broad central boss.
-
-The upper through-pocket deliberately avoids a 42 mm bridged ceiling, making the carriage practical to FDM print flat.
+The female die installs face **down** in the upper carriage. Flip the printed female **180° about Y** so its key still points toward the front. The round backing cap clamps it from above.
 
 ## Hardware
 
-Prototype hardware:
+Prototype hardware remains intentionally ordinary:
 
 - 1 × M6 bolt / ~6 mm smooth pin for the main pivot;
 - 1 × M5 bolt / ~5 mm smooth pin for the carriage drive pin;
 - 2 × M3 × ~10 mm screws for the upper die backing cap.
 
-The M3 carriage holes are 2.6 mm prototype pilot holes intended for plastic self-tapping. Do not over-tighten them.
+The M3 carriage holes are prototype pilot holes intended for plastic self-tapping. Do not over-tighten them.
 
-## Nominal mechanism
+## Validation status
 
-Current corrected-v2 defaults are approximately:
+V3 is required to pass CAD solid checks, open/closed printed-part collision checks, the exact 42 mm die contract, and CLI STL/STEP export in CI before it is treated as software-valid.
 
-- body footprint: **70 × 120 mm**;
-- standard die: **42 mm**;
-- upper-carriage travel: **14 mm**;
-- open handle angle: roughly **high-30s to low-40s degrees**;
-- nominal mechanical ratio: greater than **6.5:1**;
-- no exposed guide rods or large top bridge.
-
-The body uses two compact side guides around the die area plus rear pivot towers. The long lever provides mechanical advantage while remaining much closer to a commercial handheld embosser footprint than the original V0.2 laboratory press.
-
-## Suggested first print
-
-The design is CAD/software validated but has not yet been physically strength-qualified. For the first print:
-
-1. generate the press at 100% scale;
-2. slice the `body.stl` and `upper_carriage.stl` first and inspect material/time;
-3. test a standard 42 mm die in the lower pocket before assembling the lever;
-4. install the upper female die and backing cap;
-5. use ordinary copy/notebook paper;
-6. apply gradually increasing hand force only;
-7. stop immediately if the body whitens, cracks, the pivot holes elongate, or the carriage binds.
-
-Record the physical result in `docs/PHYSICAL_VALIDATION.md` before treating the press as strength validated.
-
-## Old rod-guided prototype
-
-`embossforge mechanics` still exports the much larger V0.2 rod-guided engineering press. It is retained for comparison and for future strength experiments, but it is no longer the recommended main EmbossForge form factor.
+It is **not yet physically strength-qualified**. For the first print, slice the body and lever first, inspect material/time and print orientation, verify die seating at 100% scale, then assemble and increase hand force gradually. Record the result in `docs/PHYSICAL_VALIDATION.md` before treating V3 as a proven press.
