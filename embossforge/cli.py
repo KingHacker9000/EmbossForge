@@ -34,13 +34,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="Check the local CAD/toolchain installation")
     sub.add_parser("gui", help="Launch the desktop app")
 
+    relief_defaults = ReliefSpec()
     die = sub.add_parser("die", help="Generate a matched male/female die pair")
     die.add_argument("artwork", type=Path, help="SVG, PNG, JPG, BMP, TIFF, or WEBP artwork")
     die.add_argument("--out", type=Path, default=Path("build"), help="Output directory")
     die.add_argument("--name", help="Output stem; defaults to the artwork filename")
     die.add_argument("--diameter", type=float, default=42.0, help="Die diameter in mm")
     die.add_argument("--base", type=float, default=3.0, help="Die base thickness in mm")
-    die.add_argument("--relief", type=float, default=0.65, help="Binary relief height / relief-mode default max in mm")
+    die.add_argument("--relief", type=float, default=0.65, help="Binary-mode relief height in mm")
     die.add_argument("--mode", choices=[m.value for m in ArtworkMode], default="binary", help="binary or variable-depth relief")
     die.add_argument(
         "--source-interpretation",
@@ -48,14 +49,33 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="What uploaded pixels mean: flat-artwork, true height-map, or shaded-reference conversion",
     )
-    die.add_argument("--relief-max", type=float, default=None, help="Maximum variable-depth relief in mm")
+    die.add_argument(
+        "--relief-max",
+        type=float,
+        default=None,
+        help=f"Maximum variable-depth relief in mm; default {relief_defaults.max_relief_mm:.2f}",
+    )
+    die.add_argument(
+        "--relief-min",
+        type=float,
+        default=None,
+        help=(
+            "Minimum physical height assigned to any non-zero variable relief; "
+            f"default {relief_defaults.min_relief_mm:.2f} mm, use 0 to preserve shallow authored tones"
+        ),
+    )
     die.add_argument(
         "--relief-style",
         choices=[s.value for s in ReliefStyle],
-        default="stepped",
+        default=relief_defaults.style.value,
         help="Variable-depth mapping style",
     )
-    die.add_argument("--relief-levels", type=int, default=6, help="Number of levels for stepped relief")
+    die.add_argument(
+        "--relief-levels",
+        type=int,
+        default=relief_defaults.levels,
+        help="Total stepped levels including zero/background",
+    )
     die.add_argument("--relief-gamma", type=float, default=1.0, help="Relief tone response gamma")
     die.add_argument(
         "--relief-polarity",
@@ -103,7 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Exact paper thickness in mm; overrides --paper",
     )
-    die.add_argument("--extra-depth", type=float, default=0.20, help="Extra female cavity depth in mm")
+    die.add_argument(
+        "--extra-depth",
+        type=float,
+        default=0.05,
+        help="Extra female Z clearance beyond matching male relief in mm; paper thickness is handled separately",
+    )
     die.add_argument("--margin", type=float, default=3.0, help="Artwork margin from die edge in mm")
     die.add_argument("--threshold", type=int, default=160, help="Raster threshold 0-255 in binary mode")
     die.add_argument("--invert", action="store_true", help="Use for light artwork on a dark background in binary mode")
@@ -255,8 +280,10 @@ def _die(args: argparse.Namespace) -> int:
     profile = PrinterProfile.from_toml(args.profile) if args.profile else None
     relief_spec = None
     if args.mode == ArtworkMode.RELIEF.value:
+        defaults = ReliefSpec()
         relief_spec = ReliefSpec(
-            max_relief_mm=args.relief_max if args.relief_max is not None else args.relief,
+            max_relief_mm=args.relief_max if args.relief_max is not None else defaults.max_relief_mm,
+            min_relief_mm=args.relief_min if args.relief_min is not None else defaults.min_relief_mm,
             style=ReliefStyle(args.relief_style),
             levels=args.relief_levels,
             gamma=args.relief_gamma,
@@ -299,6 +326,12 @@ def _die(args: argparse.Namespace) -> int:
         print(f"  printer profile: {result.printer_profile.name}")
     print(f"  paper thickness: {result.spec.paper_thickness_mm:.3f} mm ({result.paper_source})")
     print(f"  female clearance: {result.spec.female_xy_clearance_mm:.3f} mm ({result.clearance_source})")
+    if relief_spec is not None:
+        print(
+            f"  relief range: {relief_spec.min_relief_mm:.3f}..{relief_spec.max_relief_mm:.3f} mm "
+            f"({relief_spec.levels} stepped levels incl. zero)"
+        )
+        print(f"  female extra Z clearance: {result.spec.female_extra_depth_mm:.3f} mm")
     print(f"  validation: {result.validation.highest_severity.value} [{result.validation.verification_level}]")
     for finding in result.validation.findings:
         print(f"    {finding.severity.value}: {finding.message}")
