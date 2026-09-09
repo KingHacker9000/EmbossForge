@@ -16,10 +16,20 @@ from .handheld_compact import (
     build_hand_lever_body,
     build_upper_backing_cap,
     build_upper_carriage,
-    export_hand_lever_press_pack,
+    export_hand_lever_press_pack as export_blocky_hand_lever_press_pack,
     hand_lever_spec,
     standard_handheld_die_spec,
     validate_hand_lever_clearance,
+)
+from .handheld_elegant import (
+    build_elegant_assembly,
+    build_elegant_body,
+    build_elegant_lever,
+    build_elegant_upper_cap,
+    build_elegant_upper_carriage,
+    elegant_lever_spec,
+    export_elegant_lever_press_pack,
+    validate_elegant_clearance,
 )
 from .micro import (
     MicroTongsSpec,
@@ -30,6 +40,9 @@ from .micro import (
 )
 from .mini import export_mini_test_pack, mini_cartridge_spec, mini_die_spec, mini_press_spec
 from .spec import CartridgeSpec, PressSpec
+
+# Public default: the sculpted V3. The old V2 export remains available explicitly.
+export_hand_lever_press_pack = export_elegant_lever_press_pack
 
 __all__ = [
     "CartridgeSpec",
@@ -50,6 +63,15 @@ __all__ = [
     "build_hand_lever",
     "build_hand_lever_assembly",
     "validate_hand_lever_clearance",
+    "export_blocky_hand_lever_press_pack",
+    "elegant_lever_spec",
+    "build_elegant_body",
+    "build_elegant_upper_carriage",
+    "build_elegant_upper_cap",
+    "build_elegant_lever",
+    "build_elegant_assembly",
+    "validate_elegant_clearance",
+    "export_elegant_lever_press_pack",
     "export_hand_lever_press_pack",
     "mini_cartridge_spec",
     "mini_press_spec",
