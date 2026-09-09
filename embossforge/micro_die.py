@@ -41,21 +41,13 @@ def micro_butterfly_spec(*, paper_thickness_mm: float = 0.10) -> DieSpec:
 
 
 def _butterfly_2d_scad() -> str:
-    """Recognizable, chunky butterfly sized for the 16 mm micro die.
-
-    Four overlapping elliptical wings plus a capsule-like body/head are used
-    instead of imported SVG paths. This intentionally favors printability and
-    visual recognizability with a 0.4 mm nozzle.
-    """
+    """Recognizable, chunky butterfly sized for the 16 mm micro die."""
     return """module butterfly2d() {
   union() {
-    // upper wings
     translate([-2.7,  1.55]) scale([1.35, 1.00]) circle(r=2.20, $fn=48);
     translate([ 2.7,  1.55]) scale([1.35, 1.00]) circle(r=2.20, $fn=48);
-    // lower wings
     translate([-2.6, -2.15]) scale([1.10, 0.85]) circle(r=1.80, $fn=48);
     translate([ 2.6, -2.15]) scale([1.10, 0.85]) circle(r=1.80, $fn=48);
-    // body and head
     hull() {
       translate([0, -2.7]) circle(r=0.68, $fn=32);
       translate([0,  2.5]) circle(r=0.68, $fn=32);
@@ -107,7 +99,8 @@ difference() {{
 """
 
 
-def _pair_solid_mass_upper_bound_g(spec: DieSpec) -> float:
+def _solid_pair_mass_upper_bound_g(spec: DieSpec) -> float:
+    """Conservative historical helper retained for test/API compatibility."""
     radius_cm = (spec.diameter_mm / 2) / 10
     base_cm = spec.base_thickness_mm / 10
     relief_cm = spec.relief_height_mm / 10
@@ -137,7 +130,7 @@ def export_micro_butterfly_test(
 
     male_stl = render_scad(male_scad, out / "micro_butterfly_male.stl")
     female_stl = render_scad(female_scad, out / "micro_butterfly_female.stl")
-    mass = _pair_solid_mass_upper_bound_g(spec)
+    mass = _solid_pair_mass_upper_bound_g(spec)
 
     manifest = out / "micro_butterfly_manifest.json"
     data = {
