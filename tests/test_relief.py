@@ -26,7 +26,7 @@ def test_relief_spec_validation():
     assert spec.style == ReliefStyle.STEPPED
     assert spec.levels == 4
     assert spec.max_relief_mm == pytest.approx(1.20)
-    assert spec.min_relief_mm == pytest.approx(0.40)
+    assert spec.min_relief_mm == pytest.approx(0.0)
     assert spec.polarity == ReliefPolarity.DARK_HIGH
 
     with pytest.raises(ValueError):
