@@ -32,7 +32,6 @@ from .handheld_elegant import (
     validate_elegant_clearance,
 )
 from .handheld_lean_test import (
-    build_lean_test_assembly,
     build_lean_test_body,
     build_lean_test_lever,
     build_lean_test_upper_cap,
@@ -42,6 +41,9 @@ from .handheld_lean_test import (
     build_printed_drive_retainer,
     build_printed_main_pivot,
     build_printed_main_pivot_retainer,
+)
+from .handheld_lean_test_fixed import (
+    build_lean_test_assembly,
     export_lean_test_press_pack,
     lean_test_spec,
     validate_lean_test_clearance,
