@@ -41,7 +41,10 @@ class DieGenerationRequest:
     clearance_mm: float | None = None
     paper_preset: str | None = "copy"
     paper_thickness_mm: float | None = None
-    female_extra_depth_mm: float = 0.20
+    # Extra Z accommodation beyond the matching male relief. Paper thickness is
+    # already represented by the nominal closed face separation and must not be
+    # added here again.
+    female_extra_depth_mm: float = 0.05
     margin_mm: float = 3.0
     threshold: int = 160
     invert: bool = False
