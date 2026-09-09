@@ -86,10 +86,12 @@ def test_stepped_relief_never_quantizes_active_tones_below_print_floor(tmp_path:
     )
     result = build_height_map(source, tmp_path, "tiers", die, relief, None)
     physical = result.relief * relief.max_relief_mm
-    active_values = np.unique(np.round(physical[physical > 0], 4))
-    assert set(active_values.tolist()).issubset({0.4, 0.8, 1.2})
-    assert active_values.min() >= 0.4
-    assert active_values.max() == pytest.approx(1.2)
+    active_values = np.unique(physical[physical > 0])
+    assert len(active_values) <= 3
+    for value in active_values:
+        assert any(float(value) == pytest.approx(expected, abs=1e-5) for expected in (0.4, 0.8, 1.2))
+    assert float(active_values.min()) == pytest.approx(0.4, abs=1e-5)
+    assert float(active_values.max()) == pytest.approx(1.2, abs=1e-5)
 
 
 def test_female_cavity_uses_extra_depth_not_paper_thickness(tmp_path: Path):
