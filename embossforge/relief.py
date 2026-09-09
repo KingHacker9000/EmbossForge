@@ -49,15 +49,14 @@ _SEVERITY_ORDER = {
 class ReliefSpec:
     """Shared variable-depth relief settings used by CLI, GUI, and API callers.
 
-    ``min_relief_mm`` is a printable floor for any non-zero relief. FDM embossing
-    needs this because a nominal grayscale tier that becomes only a fraction of a
-    layer is visually present in CAD but functionally absent on paper. Set it to
-    zero when preserving the full 0..max authored response is more important than
-    the printer-oriented default.
+    ``min_relief_mm`` is an optional printable floor for any non-zero relief. The
+    library default stays at zero for backwards compatibility and exact authored
+    height-map work. The CLI applies a stronger FDM-oriented floor unless the user
+    explicitly overrides it.
     """
 
     max_relief_mm: float = 1.20
-    min_relief_mm: float = 0.40
+    min_relief_mm: float = 0.0
     style: ReliefStyle = ReliefStyle.STEPPED
     levels: int = 4
     gamma: float = 1.0
