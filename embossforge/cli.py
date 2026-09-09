@@ -23,6 +23,9 @@ from .relief import ArtworkMode, ReliefPolarity, ReliefSpec, ReliefStyle, Source
 from .scad_backend import find_openscad, render_scad
 
 
+CLI_FDM_MIN_RELIEF_MM = 0.40
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="embossforge",
@@ -61,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Minimum physical height assigned to any non-zero variable relief; "
-            f"default {relief_defaults.min_relief_mm:.2f} mm, use 0 to preserve shallow authored tones"
+            f"CLI defaults near {CLI_FDM_MIN_RELIEF_MM:.2f} mm for FDM, use 0 to preserve shallow authored tones"
         ),
     )
     die.add_argument(
@@ -281,9 +284,15 @@ def _die(args: argparse.Namespace) -> int:
     relief_spec = None
     if args.mode == ArtworkMode.RELIEF.value:
         defaults = ReliefSpec()
+        max_relief = args.relief_max if args.relief_max is not None else defaults.max_relief_mm
+        min_relief = (
+            args.relief_min
+            if args.relief_min is not None
+            else min(CLI_FDM_MIN_RELIEF_MM, max_relief * 0.5)
+        )
         relief_spec = ReliefSpec(
-            max_relief_mm=args.relief_max if args.relief_max is not None else defaults.max_relief_mm,
-            min_relief_mm=args.relief_min if args.relief_min is not None else defaults.min_relief_mm,
+            max_relief_mm=max_relief,
+            min_relief_mm=min_relief,
             style=ReliefStyle(args.relief_style),
             levels=args.relief_levels,
             gamma=args.relief_gamma,
