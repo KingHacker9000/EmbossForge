@@ -36,6 +36,9 @@ def build_height_map(
     array is normalized 0..1 with 1=max relief. A separate surface map is written
     with white=max because OpenSCAD's ``surface()`` interprets brighter pixels as
     larger Z values.
+
+    Non-zero relief can optionally be lifted to ``ReliefSpec.min_relief_mm`` so
+    grayscale tiers do not collapse into fractions of a printable FDM layer.
     """
     relief_spec.validate()
     src = Path(source)
@@ -94,11 +97,10 @@ def build_height_map(
         if sigma >= 0.25:
             relief = cv2.GaussianBlur(relief, (0, 0), sigmaX=sigma, sigmaY=sigma)
             relief = np.clip(relief, 0.0, 1.0)
+            # Avoid turning the whole nominally-flat field into a shallow fuzzy pad.
+            relief[relief < relief_spec.zero_threshold] = 0.0
 
-    if relief_spec.style == ReliefStyle.STEPPED:
-        levels = relief_spec.levels
-        relief = np.round(relief * (levels - 1)) / float(levels - 1)
-
+    relief = _map_to_printable_depth_tiers(relief, relief_spec)
     _apply_circular_artwork_mask(relief, spec)
 
     filtered_pixels = 0
@@ -136,7 +138,13 @@ def build_female_surface_map(
     spec: DieSpec,
     relief_spec: ReliefSpec,
 ) -> tuple[Path, float, np.ndarray]:
-    """Create the cavity-depth field from the same canonical male field."""
+    """Create the cavity-depth field from the same canonical male field.
+
+    The press already holds the two nominal die faces apart by the selected paper
+    thickness. Therefore the cavity depth is male relief + *extra Z clearance only*.
+    Adding paper thickness here as well double-counts it and prevents the paper from
+    being driven against the female cavity.
+    """
     radius_px = int(math.ceil(spec.female_xy_clearance_mm / max(result.mm_per_sample, 1e-9)))
     source_u8 = np.round(result.relief * 255.0).astype(np.uint8)
     if radius_px > 0:
@@ -147,15 +155,14 @@ def build_female_surface_map(
         expanded_u8 = source_u8
 
     expanded = expanded_u8.astype(np.float32) / 255.0
-    allowance = spec.paper_thickness_mm + spec.female_extra_depth_mm
     cavity_mm = expanded * relief_spec.max_relief_mm
-    cavity_mm[expanded > 0] += allowance
-    max_cavity_mm = relief_spec.max_relief_mm + allowance
+    cavity_mm[expanded > 0] += spec.female_extra_depth_mm
+    max_cavity_mm = relief_spec.max_relief_mm + spec.female_extra_depth_mm
 
     if max_cavity_mm >= spec.base_thickness_mm:
         raise ValueError(
             "female relief cavity is deeper than the female die base; increase base thickness "
-            "or reduce maximum relief/paper/extra depth"
+            "or reduce maximum relief/extra depth"
         )
 
     normalized = np.clip(cavity_mm / max(max_cavity_mm, 1e-9), 0.0, 1.0)
@@ -167,6 +174,38 @@ def build_female_surface_map(
     if not cv2.imwrite(str(path), female_u8):
         raise RuntimeError(f"Could not write female relief surface map: {path}")
     return path, max_cavity_mm, normalized
+
+
+def _map_to_printable_depth_tiers(relief: np.ndarray, relief_spec: ReliefSpec) -> np.ndarray:
+    """Map non-zero authored tones into an FDM-meaningful physical depth range.
+
+    Zero stays exactly zero. With the default 1.20 mm max / 0.40 mm minimum / four
+    stepped levels, active geometry becomes 0.40, 0.80 or 1.20 mm. This avoids the
+    previous 0.12-ish mm tiers that could disappear into a single sliced layer.
+    """
+    out = relief.copy().astype(np.float32)
+    active = out > 0
+    if not np.any(active):
+        return out
+
+    floor = relief_spec.min_relief_mm / relief_spec.max_relief_mm
+    values = np.clip(out[active], 0.0, 1.0)
+
+    if relief_spec.style == ReliefStyle.STEPPED:
+        active_levels = max(1, relief_spec.levels - 1)
+        if active_levels == 1:
+            mapped = np.ones_like(values)
+        else:
+            # levels includes the zero/background level; every active pixel gets
+            # one of the remaining printable tiers and cannot quantize back to 0.
+            indices = np.rint(values * (active_levels - 1)).astype(np.int32)
+            indices = np.clip(indices, 0, active_levels - 1)
+            mapped = floor + (indices / float(active_levels - 1)) * (1.0 - floor)
+    else:
+        mapped = floor + values * (1.0 - floor)
+
+    out[active] = np.clip(mapped, 0.0, 1.0)
+    return out
 
 
 def _sampling_target(
