@@ -47,11 +47,19 @@ _SEVERITY_ORDER = {
 
 @dataclass(frozen=True)
 class ReliefSpec:
-    """Shared variable-depth relief settings used by CLI, GUI, and API callers."""
+    """Shared variable-depth relief settings used by CLI, GUI, and API callers.
 
-    max_relief_mm: float = 0.65
+    ``min_relief_mm`` is a printable floor for any non-zero relief. FDM embossing
+    needs this because a nominal grayscale tier that becomes only a fraction of a
+    layer is visually present in CAD but functionally absent on paper. Set it to
+    zero when preserving the full 0..max authored response is more important than
+    the printer-oriented default.
+    """
+
+    max_relief_mm: float = 1.20
+    min_relief_mm: float = 0.40
     style: ReliefStyle = ReliefStyle.STEPPED
-    levels: int = 6
+    levels: int = 4
     gamma: float = 1.0
     polarity: ReliefPolarity = ReliefPolarity.DARK_HIGH
     zero_threshold: float = 0.02
@@ -62,6 +70,10 @@ class ReliefSpec:
     def validate(self) -> None:
         if self.max_relief_mm <= 0:
             raise ValueError("max_relief_mm must be > 0")
+        if self.min_relief_mm < 0:
+            raise ValueError("min_relief_mm must be >= 0")
+        if self.min_relief_mm >= self.max_relief_mm:
+            raise ValueError("min_relief_mm must be smaller than max_relief_mm")
         if self.style == ReliefStyle.STEPPED and self.levels < 2:
             raise ValueError("stepped relief requires at least 2 levels")
         if self.levels > 256:
