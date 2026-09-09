@@ -102,6 +102,7 @@ jobs:
             --relief-max 0.30 \
             --relief-style stepped \
             --relief-levels 4 \
+            --relief-quality draft \
             --paper copy \
             --profile profiles/flashforge_adventurer_5m.toml \
             --allow-risky
