@@ -70,7 +70,9 @@ def validate_relief_field(
             )
         )
 
-    max_cavity = relief_spec.max_relief_mm + spec.paper_thickness_mm + spec.female_extra_depth_mm
+    # Paper thickness is already represented by nominal face separation at closure.
+    # The female cavity only needs the male relief depth plus explicit extra Z clearance.
+    max_cavity = relief_spec.max_relief_mm + spec.female_extra_depth_mm
     if max_cavity >= spec.base_thickness_mm:
         findings.append(
             ValidationFinding(
@@ -81,7 +83,7 @@ def validate_relief_field(
                 threshold=spec.base_thickness_mm,
                 units="mm",
                 message="The deepest female cavity would break through the die base.",
-                recommendation="Increase base thickness or reduce relief/paper/extra depth.",
+                recommendation="Increase base thickness or reduce relief/extra depth.",
             )
         )
 
@@ -99,17 +101,41 @@ def validate_heightfield_mating(
     spec: DieSpec,
     relief_spec: ReliefSpec,
 ) -> ValidationReport:
+    """Validate both accommodation and *engagement* of the canonical relief pair.
+
+    A female that is merely deeper than the male will not collide, but if it is too
+    deep it also will not emboss. The expected cavity is male depth + explicit
+    female_extra_depth_mm; paper thickness belongs in the face-to-face closure gap.
+    """
     findings: list[ValidationFinding] = []
     female_unmirrored = np.fliplr(female_surface_normalized)
     female_cavity_mm = female_unmirrored * max_cavity_mm
     male_mm = male.relief * relief_spec.max_relief_mm
     active = male.relief > 0
-    required = male_mm.copy()
-    required[active] += spec.paper_thickness_mm + spec.female_extra_depth_mm
 
+    tolerance = max(0.01, male.mm_per_sample * 0.05)
+    expected_max_cavity = relief_spec.max_relief_mm + spec.female_extra_depth_mm
+    if abs(max_cavity_mm - expected_max_cavity) > tolerance:
+        findings.append(
+            ValidationFinding(
+                code="mating.excess_or_missing_z_allowance",
+                severity=ValidationSeverity.ERROR,
+                overridable=False,
+                metric=round(max_cavity_mm, 4),
+                threshold=round(expected_max_cavity, 4),
+                units="mm",
+                message=(
+                    "The generated female maximum cavity depth does not match male relief + explicit Z clearance. "
+                    "Paper thickness must not be added to the cavity depth because closure already accounts for it."
+                ),
+                recommendation="Regenerate with the corrected matched-pair backend before printing.",
+            )
+        )
+
+    required = male_mm.copy()
+    required[active] += spec.female_extra_depth_mm
     shortfall = required - female_cavity_mm
     max_shortfall = float(np.max(shortfall[active])) if np.any(active) else 0.0
-    tolerance = max(0.01, male.mm_per_sample * 0.05)
     if max_shortfall > tolerance:
         findings.append(
             ValidationFinding(
@@ -124,7 +150,31 @@ def validate_heightfield_mating(
             )
         )
 
-    return ValidationReport(findings=tuple(findings), verification_level="heightfield-closure")
+    # At the deepest shared peaks, dilation cannot legitimately make the female any
+    # deeper than max male + explicit Z allowance. This check catches the historical
+    # paper-thickness-double-counting bug while still allowing XY dilation at edges.
+    peaks = male.relief >= 0.995
+    if np.any(peaks):
+        peak_extra = female_cavity_mm[peaks] - male_mm[peaks]
+        median_extra = float(np.median(peak_extra))
+        if abs(median_extra - spec.female_extra_depth_mm) > max(tolerance, 0.02):
+            findings.append(
+                ValidationFinding(
+                    code="mating.peak_gap_wrong",
+                    severity=ValidationSeverity.ERROR,
+                    overridable=False,
+                    metric=round(median_extra, 4),
+                    threshold=round(spec.female_extra_depth_mm, 4),
+                    units="mm",
+                    message=(
+                        "Deep male peaks do not approach the female cavity with the requested Z clearance; "
+                        "the pair may close without transferring enough pressure into the paper."
+                    ),
+                    recommendation="Regenerate the pair; do not compensate by forcing the press harder.",
+                )
+            )
+
+    return ValidationReport(findings=tuple(findings), verification_level="heightfield-closure+engagement")
 
 
 def merge_validation_reports(*reports: ValidationReport, override_used: bool = False) -> ValidationReport:
