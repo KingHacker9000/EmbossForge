@@ -11,7 +11,17 @@ def test_default_spec_is_valid():
     spec = DieSpec()
     spec.validate()
     assert spec.artwork_box_mm == 36.0
-    assert spec.female_cavity_depth_mm == 0.95
+    assert spec.female_cavity_depth_mm == pytest.approx(0.70)
+    assert spec.nominal_feature_gap_mm == pytest.approx(0.15)
+
+
+def test_female_cavity_does_not_double_count_paper_thickness():
+    thin = DieSpec(relief_height_mm=1.2, paper_thickness_mm=0.10, female_extra_depth_mm=0.03)
+    thick = DieSpec(relief_height_mm=1.2, paper_thickness_mm=0.25, female_extra_depth_mm=0.03)
+    assert thin.female_cavity_depth_mm == pytest.approx(1.23)
+    assert thick.female_cavity_depth_mm == pytest.approx(1.23)
+    assert thin.nominal_feature_gap_mm == pytest.approx(0.13)
+    assert thick.nominal_feature_gap_mm == pytest.approx(0.28)
 
 
 def test_margin_cannot_consume_die():
