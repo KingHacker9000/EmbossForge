@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 
@@ -55,6 +56,22 @@ def _render_timeout_seconds() -> int:
     except ValueError:
         return DEFAULT_OPENSCAD_TIMEOUT_SECONDS
     return max(30, value)
+
+
+def _stl_has_triangles(path: Path) -> bool:
+    """Return whether an ASCII or binary STL contains at least one triangle."""
+    if not path.exists() or path.stat().st_size < 50:
+        return False
+    with path.open("rb") as fh:
+        head = fh.read(512)
+    if head.lstrip().startswith(b"solid"):
+        return b"facet" in head or b"facet" in path.read_bytes()
+    if path.stat().st_size < 84:
+        return False
+    with path.open("rb") as fh:
+        fh.seek(80)
+        raw = fh.read(4)
+    return len(raw) == 4 and struct.unpack("<I", raw)[0] > 0
 
 
 def render_scad(source_scad: str | Path, output_stl: str | Path) -> Path:
@@ -232,9 +249,14 @@ def _render(
         output_stl.unlink(missing_ok=True)
         raise RuntimeError(
             f"OpenSCAD timed out after {timeout_seconds}s rendering {source_scad.name}. "
-            "For a variable-depth die, retry with Height-map quality = Draft, fewer height levels, "
+            "For a variable-depth die, retry with --relief-quality draft, fewer height levels, "
             "or a simpler/cleaner height map."
         ) from exc
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or "OpenSCAD failed without diagnostic output"
+        output_stl.unlink(missing_ok=True)
         raise RuntimeError(f"OpenSCAD failed rendering {source_scad.name}: {message}")
+    if not _stl_has_triangles(output_stl):
+        message = result.stderr.strip() or result.stdout.strip() or "OpenSCAD returned an empty mesh"
+        output_stl.unlink(missing_ok=True)
+        raise RuntimeError(f"OpenSCAD produced an empty STL for {source_scad.name}: {message}")
