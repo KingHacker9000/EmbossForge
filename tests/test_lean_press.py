@@ -9,6 +9,8 @@ from embossforge.mechanics.handheld_lean_test import (
     build_printed_drive_retainer,
     build_printed_main_pivot,
     build_printed_main_pivot_retainer,
+)
+from embossforge.mechanics.handheld_lean_test_fixed import (
     lean_test_spec,
     validate_lean_test_clearance,
 )
@@ -21,6 +23,7 @@ def test_lean_press_keeps_exact_existing_42mm_die_contract():
     assert die.base_thickness_mm == 3.0
     assert die.key_width_mm == 6.0
     assert die.key_depth_mm == 2.5
+    assert spec.carriage_width_mm >= 51.0
     assert spec.nominal_lever_ratio > 6.0
 
 
