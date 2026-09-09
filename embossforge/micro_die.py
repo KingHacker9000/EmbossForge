@@ -15,13 +15,21 @@ BUTTERFLY_SVG = """<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 1
 
 
 def micro_butterfly_spec(*, paper_thickness_mm: float = 0.10) -> DieSpec:
-    """Tiny but printable matched die intended for a first embossing test."""
+    """Tiny matched die preserving the exact physically successful cavity geometry.
+
+    The first printed article used a 0.65 mm female cavity (0.45 mm male relief +
+    the historical 0.10 mm paper allowance + 0.10 mm extra allowance). The general
+    cavity semantics were later corrected so paper thickness is handled by closure,
+    not cavity depth. To keep this reference artifact reproducible, its explicit
+    extra-depth value is now 0.20 mm, yielding the same 0.65 mm physical cavity.
+    New general-purpose dies should use the corrected tighter engagement defaults.
+    """
     spec = DieSpec(
         diameter_mm=16.0,
         base_thickness_mm=1.8,
         relief_height_mm=0.45,
         female_xy_clearance_mm=0.20,
-        female_extra_depth_mm=0.10,
+        female_extra_depth_mm=0.20,
         paper_thickness_mm=paper_thickness_mm,
         margin_mm=1.5,
         facets=96,
@@ -99,96 +107,62 @@ difference() {{
 """
 
 
-def _solid_pair_mass_upper_bound_g(spec: DieSpec, *, pla_density_g_cm3: float = 1.24) -> float:
-    overlap_mm = 0.5
-    carrier_area_mm2 = (
-        math.pi * (spec.diameter_mm / 2) ** 2
-        + spec.key_width_mm * (spec.key_depth_mm + overlap_mm)
-    )
-    pair_base_volume_mm3 = 2 * carrier_area_mm2 * spec.base_thickness_mm
-    male_relief_bound_mm3 = math.pi * spec.artwork_radius_mm**2 * spec.relief_height_mm
-    return ((pair_base_volume_mm3 + male_relief_bound_mm3) / 1000.0) * pla_density_g_cm3
+def _pair_solid_mass_upper_bound_g(spec: DieSpec) -> float:
+    radius_cm = (spec.diameter_mm / 2) / 10
+    base_cm = spec.base_thickness_mm / 10
+    relief_cm = spec.relief_height_mm / 10
+    carrier = math.pi * radius_cm * radius_cm * base_cm
+    tab_cm3 = (spec.key_width_mm / 10) * (spec.key_depth_mm / 10) * base_cm
+    artwork_fraction = 0.42
+    male_relief = math.pi * (spec.artwork_radius_mm / 10) ** 2 * relief_cm * artwork_fraction
+    pair_cm3 = 2 * (carrier + tab_cm3) + male_relief
+    return pair_cm3 * 1.24
 
 
 def export_micro_butterfly_test(
     out_dir: str | Path,
     *,
     paper_thickness_mm: float = 0.10,
-) -> dict[str, str]:
+) -> dict[str, str | float]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-
     spec = micro_butterfly_spec(paper_thickness_mm=paper_thickness_mm)
+
     artwork = out / "micro_butterfly.svg"
     artwork.write_text(BUTTERFLY_SVG, encoding="utf-8")
-
     male_scad = out / "micro_butterfly_male.scad"
     female_scad = out / "micro_butterfly_female.scad"
-    male_stl = out / "micro_butterfly_male.stl"
-    female_stl = out / "micro_butterfly_female.stl"
-
     male_scad.write_text(_male_scad(spec), encoding="utf-8")
     female_scad.write_text(_female_scad(spec), encoding="utf-8")
-    render_scad(male_scad, male_stl)
-    render_scad(female_scad, female_stl)
 
-    outputs = {
-        "male_scad": male_scad,
-        "female_scad": female_scad,
-        "male_stl": male_stl,
-        "female_stl": female_stl,
+    male_stl = render_scad(male_scad, out / "micro_butterfly_male.stl")
+    female_stl = render_scad(female_scad, out / "micro_butterfly_female.stl")
+    mass = _pair_solid_mass_upper_bound_g(spec)
+
+    manifest = out / "micro_butterfly_manifest.json"
+    data = {
+        "purpose": "ultra-low-filament real matched emboss test",
+        "physical_reference_geometry_preserved": True,
+        "spec": asdict(spec),
+        "derived": {
+            "female_cavity_depth_mm": spec.female_cavity_depth_mm,
+            "solid_pair_mass_upper_bound_g": round(mass, 3),
+        },
+        "instructions": [
+            "Print male and female at 100% scale with artwork faces upward.",
+            "Align the +Y orientation tabs when testing by hand.",
+            "Place scrap paper between the faces and squeeze gently between flat plates or a small clamp.",
+            "This artifact intentionally preserves the cavity geometry of the first physically successful print.",
+        ],
     }
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-    # Dedicated manifest for this direct-geometry test. Keeping it separate
-    # avoids implying that the SVG importer produced these STL reliefs.
-    pair_manifest = out / "micro_butterfly_manifest.json"
-    pair_manifest.write_text(
-        json.dumps(
-            {
-                "name": "micro_butterfly",
-                "geometry_source": "direct OpenSCAD primitives (SVG is preview/reference only)",
-                "spec": asdict(spec),
-                "derived": {
-                    "artwork_radius_mm": spec.artwork_radius_mm,
-                    "female_cavity_depth_mm": spec.female_cavity_depth_mm,
-                    "carrier_depth_mm": spec.carrier_depth_mm,
-                },
-                "outputs": {key: str(value) for key, value in outputs.items()},
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    outputs["manifest"] = pair_manifest
-
-    mass_bound = _solid_pair_mass_upper_bound_g(spec)
-    manifest = out / "micro_butterfly_test_manifest.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "purpose": "Ultra-low-filament first real male/female embossing test",
-                "design": "chunky direct-geometry butterfly silhouette",
-                "spec": asdict(spec),
-                "solid_pair_mass_upper_bound_g": round(mass_bound, 3),
-                "printing_note": (
-                    "Slice the male and female STL together at 100% scale. "
-                    "Trust FlashPrint's material estimate before printing and leave extra filament for printer purge/prime."
-                ),
-                "use_note": (
-                    "This pair is meant for light test embossing only. Align the tabs, place paper between the faces, "
-                    "and press gently between two flat hard surfaces or with a small clamp/pliers with flat jaws."
-                ),
-                "outputs": {key: str(value) for key, value in outputs.items()},
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    result = {key: str(value) for key, value in outputs.items()}
-    result["artwork"] = str(artwork)
-    result["test_manifest"] = str(manifest)
-    result["solid_pair_mass_upper_bound_g"] = f"{mass_bound:.2f}"
-    return result
+    return {
+        "artwork": str(artwork),
+        "male_scad": str(male_scad),
+        "female_scad": str(female_scad),
+        "male_stl": str(male_stl),
+        "female_stl": str(female_stl),
+        "test_manifest": str(manifest),
+        "solid_pair_mass_upper_bound_g": round(mass, 3),
+    }
