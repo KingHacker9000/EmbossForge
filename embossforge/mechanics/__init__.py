@@ -48,13 +48,11 @@ from .handheld_lean_test_fixed import (
     lean_test_spec,
     validate_lean_test_clearance,
 )
-from .all_printable_fixed import (
-    build_cap_peg,
+from .all_printable_v5 import (
     build_drive_pin,
     build_fully_printable_assembly,
     build_fully_printable_body,
     build_fully_printable_lever,
-    build_fully_printable_upper_cap,
     build_fully_printable_upper_carriage,
     build_main_pivot_pin,
     build_retaining_wedge,
@@ -72,8 +70,8 @@ from .micro import (
 from .mini import export_mini_test_pack, mini_cartridge_spec, mini_die_spec, mini_press_spec
 from .spec import CartridgeSpec, PressSpec
 
-# Public default: V4 is fully printable. The V2/V3 prototypes remain available
-# explicitly for historical comparison and CAD experiments.
+# Public default: V5 is the fully printed, no-external-hardware press.
+# V2/V3/lean prototypes remain available explicitly for historical comparison.
 export_hand_lever_press_pack = export_fully_printable_press_pack
 
 __all__ = [
@@ -107,14 +105,12 @@ __all__ = [
     "fully_printable_spec",
     "build_fully_printable_body",
     "build_fully_printable_upper_carriage",
-    "build_fully_printable_upper_cap",
     "build_fully_printable_lever",
     "build_fully_printable_assembly",
     "validate_fully_printable_clearance",
     "build_main_pivot_pin",
     "build_drive_pin",
     "build_retaining_wedge",
-    "build_cap_peg",
     "export_fully_printable_press_pack",
     "export_hand_lever_press_pack",
     "lean_test_spec",
