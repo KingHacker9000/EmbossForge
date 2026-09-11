@@ -48,7 +48,7 @@ from .handheld_lean_test_fixed import (
     lean_test_spec,
     validate_lean_test_clearance,
 )
-from .all_printable import (
+from .all_printable_fixed import (
     build_cap_peg,
     build_drive_pin,
     build_fully_printable_assembly,
