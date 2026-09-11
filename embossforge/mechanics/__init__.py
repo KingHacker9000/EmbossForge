@@ -48,6 +48,20 @@ from .handheld_lean_test_fixed import (
     lean_test_spec,
     validate_lean_test_clearance,
 )
+from .all_printable import (
+    build_cap_peg,
+    build_drive_pin,
+    build_fully_printable_assembly,
+    build_fully_printable_body,
+    build_fully_printable_lever,
+    build_fully_printable_upper_cap,
+    build_fully_printable_upper_carriage,
+    build_main_pivot_pin,
+    build_retaining_wedge,
+    export_fully_printable_press_pack,
+    fully_printable_spec,
+    validate_fully_printable_clearance,
+)
 from .micro import (
     MicroTongsSpec,
     build_micro_tongs,
@@ -58,8 +72,9 @@ from .micro import (
 from .mini import export_mini_test_pack, mini_cartridge_spec, mini_die_spec, mini_press_spec
 from .spec import CartridgeSpec, PressSpec
 
-# Public default: the sculpted V3. The old V2 export remains available explicitly.
-export_hand_lever_press_pack = export_elegant_lever_press_pack
+# Public default: V4 is fully printable. The V2/V3 prototypes remain available
+# explicitly for historical comparison and CAD experiments.
+export_hand_lever_press_pack = export_fully_printable_press_pack
 
 __all__ = [
     "CartridgeSpec",
@@ -89,6 +104,18 @@ __all__ = [
     "build_elegant_assembly",
     "validate_elegant_clearance",
     "export_elegant_lever_press_pack",
+    "fully_printable_spec",
+    "build_fully_printable_body",
+    "build_fully_printable_upper_carriage",
+    "build_fully_printable_upper_cap",
+    "build_fully_printable_lever",
+    "build_fully_printable_assembly",
+    "validate_fully_printable_clearance",
+    "build_main_pivot_pin",
+    "build_drive_pin",
+    "build_retaining_wedge",
+    "build_cap_peg",
+    "export_fully_printable_press_pack",
     "export_hand_lever_press_pack",
     "lean_test_spec",
     "build_lean_test_body",
