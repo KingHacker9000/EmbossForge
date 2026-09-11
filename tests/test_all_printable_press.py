@@ -1,4 +1,4 @@
-from embossforge.mechanics.all_printable import (
+from embossforge.mechanics.all_printable_fixed import (
     build_cap_peg,
     build_drive_pin,
     build_fully_printable_body,
