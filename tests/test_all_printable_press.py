@@ -1,9 +1,7 @@
-from embossforge.mechanics.all_printable_fixed import (
-    build_cap_peg,
+from embossforge.mechanics.all_printable_v5 import (
     build_drive_pin,
     build_fully_printable_body,
     build_fully_printable_lever,
-    build_fully_printable_upper_cap,
     build_fully_printable_upper_carriage,
     build_main_pivot_pin,
     build_retaining_wedge,
@@ -28,12 +26,10 @@ def test_all_required_hardware_is_printed_geometry():
     parts = {
         "body": build_fully_printable_body(spec),
         "upper_carriage": build_fully_printable_upper_carriage(spec),
-        "upper_cap": build_fully_printable_upper_cap(spec),
         "lever": build_fully_printable_lever(spec),
         "main_pivot_pin": build_main_pivot_pin(spec),
         "drive_pin": build_drive_pin(spec),
         "retaining_wedge": build_retaining_wedge(),
-        "cap_peg": build_cap_peg(),
     }
     for name, part in parts.items():
         assert part.val().Volume() > 1.0, name
