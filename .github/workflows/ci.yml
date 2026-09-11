@@ -50,12 +50,10 @@ jobs:
           embossforge lever-press --out build/ci-lever-press
           test -s build/ci-lever-press/body.stl
           test -s build/ci-lever-press/upper_carriage.stl
-          test -s build/ci-lever-press/upper_die_cap.stl
           test -s build/ci-lever-press/lever.stl
           test -s build/ci-lever-press/main_pivot_pin.stl
           test -s build/ci-lever-press/drive_pin.stl
           test -s build/ci-lever-press/retaining_wedge.stl
-          test -s build/ci-lever-press/cap_peg.stl
           test -s build/ci-lever-press/assembly_closed.step
           test -s build/ci-lever-press/assembly_open.step
           test -s build/ci-lever-press/all_printable_press_manifest.json
@@ -63,14 +61,20 @@ jobs:
           import json
           from pathlib import Path
           manifest = json.loads(Path("build/ci-lever-press/all_printable_press_manifest.json").read_text())
-          assert manifest["mode"] == "all-3d-printable-42mm-lever-embosser-v4"
+          assert manifest["mode"] == "all-3d-printable-42mm-lever-embosser-v5"
           assert manifest["exact_die_contract_mm"]["diameter"] == 42.0
           assert manifest["derived"]["nominal_lever_ratio"] > 7.0
           assert manifest["external_hardware_required"] == []
-          assert manifest["printed_quantities"]["retaining_wedge"] == 2
-          assert manifest["printed_quantities"]["cap_peg"] == 2
+          assert manifest["printed_quantities"] == {
+              "body": 1,
+              "upper_carriage": 1,
+              "lever": 1,
+              "main_pivot_pin": 1,
+              "drive_pin": 1,
+              "retaining_wedge": 2,
+          }
           assert manifest["collision_validation"] == {"closed": [], "open": []}
-          print("fully printable V4 lever press smoke OK")
+          print("fully printable V5 lever press smoke OK")
           PY
 
       - name: Butterfly micro-tongs smoke test
