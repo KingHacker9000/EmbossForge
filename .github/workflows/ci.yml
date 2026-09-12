@@ -45,23 +45,36 @@ jobs:
           embossforge doctor
           embossforge butterfly-test --out build/ci-butterfly
 
-      - name: Primary elegant handheld lever press smoke test
+      - name: Primary fully printable 42 mm lever press smoke test
         run: |
           embossforge lever-press --out build/ci-lever-press
           test -s build/ci-lever-press/body.stl
           test -s build/ci-lever-press/upper_carriage.stl
-          test -s build/ci-lever-press/upper_backing_cap.stl
           test -s build/ci-lever-press/lever.stl
-          test -s build/ci-lever-press/lever_press_manifest.json
+          test -s build/ci-lever-press/main_pivot_pin.stl
+          test -s build/ci-lever-press/drive_pin.stl
+          test -s build/ci-lever-press/retaining_wedge.stl
+          test -s build/ci-lever-press/assembly_closed.step
+          test -s build/ci-lever-press/assembly_open.step
+          test -s build/ci-lever-press/all_printable_press_manifest.json
           python - <<'PY'
           import json
           from pathlib import Path
-          manifest = json.loads(Path("build/ci-lever-press/lever_press_manifest.json").read_text())
-          assert manifest["mode"] == "full-size-elegant-handheld-lever-embosser-v3"
+          manifest = json.loads(Path("build/ci-lever-press/all_printable_press_manifest.json").read_text())
+          assert manifest["mode"] == "all-3d-printable-42mm-lever-embosser-v5"
           assert manifest["exact_die_contract_mm"]["diameter"] == 42.0
-          assert manifest["derived"]["nominal_lever_ratio"] > 6.5
+          assert manifest["derived"]["nominal_lever_ratio"] > 7.0
+          assert manifest["external_hardware_required"] == []
+          assert manifest["printed_quantities"] == {
+              "body": 1,
+              "upper_carriage": 1,
+              "lever": 1,
+              "main_pivot_pin": 1,
+              "drive_pin": 1,
+              "retaining_wedge": 2,
+          }
           assert manifest["collision_validation"] == {"closed": [], "open": []}
-          print("elegant handheld lever press smoke OK")
+          print("fully printable V5 lever press smoke OK")
           PY
 
       - name: Butterfly micro-tongs smoke test
