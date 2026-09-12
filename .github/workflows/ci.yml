@@ -45,6 +45,23 @@ jobs:
           embossforge doctor
           embossforge butterfly-test --out build/ci-butterfly
 
+      - name: Compact Astra power-thread coupon smoke test
+        run: |
+          python designs/printed_screw_press/coupons.py
+          test -s build/printed_screw_press/fit_trials/power_thread_test_screw.stl
+          test -s build/printed_screw_press/fit_trials/power_thread_test_nut_radial_0.3.stl
+
+      - name: Lightweight Astra screw-press export smoke test
+        run: |
+          python designs/printed_screw_press/lite.py --out build/ci-printed-screw-press-lite
+          test -s build/ci-printed-screw-press-lite/stl/01_frame_left.stl
+          test -s build/ci-printed-screw-press-lite/stl/03_power_nut.stl
+          test -s build/ci-printed-screw-press-lite/stl/04_power_screw_wheel.stl
+          test -s build/ci-printed-screw-press-lite/stl/05_guided_ram.stl
+          test -s build/ci-printed-screw-press-lite/stl/06_tray_lower.stl
+          test -s build/ci-printed-screw-press-lite/stl/07_tray_upper.stl
+          test -s build/ci-printed-screw-press-lite/LITE_PRINT_PLAN.json
+
       - name: Primary fully printable 42 mm lever press smoke test
         run: |
           embossforge lever-press --out build/ci-lever-press
